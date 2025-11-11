@@ -133,14 +133,23 @@ def load_locations():
                 states_dict = {}
                 for loc in data:
                     state = loc.get('state', 'Unknown')
+                    if not state or state == 'Unknown':
+                        continue
                     if state not in states_dict:
                         states_dict[state] = {'state': state, 'cities': []}
                     city_name = loc.get('name', loc.get('city', ''))
                     if city_name and city_name not in states_dict[state]['cities']:
                         states_dict[state]['cities'].append(city_name)
-                return list(states_dict.values())
+                # Sort cities for each state
+                for state_data in states_dict.values():
+                    state_data['cities'].sort()
+                return sorted(list(states_dict.values()), key=lambda x: x['state'])
+        else:
+            st.error(f"Locations file not found at: {locations_file}")
     except Exception as e:
-        st.warning(f"Failed to load locations: {e}")
+        st.error(f"Failed to load locations: {e}")
+        import traceback
+        st.code(traceback.format_exc())
     return []
 
 def load_translations(language: str) -> Dict:
@@ -155,8 +164,35 @@ def load_translations(language: str) -> Dict:
         st.warning(f"Failed to load translations: {e}")
     return {}
 
-def search_city(city_name: str, state: str) -> Optional[Dict]:
-    """Search for city coordinates from locations data"""
+async def search_city_async(city_name: str, state: str) -> Optional[Dict]:
+    """Search for city coordinates using WeatherAPI (prioritized) with fallback to static data"""
+    # Try WeatherAPI first (like Next.js frontend does)
+    try:
+        cities = await backend['weather'].search_cities(city_name, country="IN")
+        if cities:
+            # Find exact match for city and state
+            city = next(
+                (c for c in cities 
+                 if c.get('name', '').lower() == city_name.lower() and 
+                    c.get('state', '').lower() == state.lower()),
+                None
+            ) or next(
+                (c for c in cities 
+                 if c.get('name', '').lower() == city_name.lower()),
+                None
+            ) or cities[0]
+            
+            if city and city.get('latitude') and city.get('longitude'):
+                return {
+                    'name': city.get('name', city_name),
+                    'state': city.get('state', state),
+                    'latitude': city.get('latitude', 20.5937),
+                    'longitude': city.get('longitude', 78.9629)
+                }
+    except Exception as e:
+        st.warning(f"WeatherAPI city search failed: {e}")
+    
+    # Fallback to static locations.json
     try:
         data_dir = current_dir / "backend" / "data"
         locations_file = data_dir / "locations.json"
@@ -175,8 +211,18 @@ def search_city(city_name: str, state: str) -> Optional[Dict]:
                                 'longitude': loc.get('lon', loc.get('longitude', 78.9629))
                             }
     except Exception as e:
-        st.warning(f"City search failed: {e}")
+        st.warning(f"Static city search failed: {e}")
+    
     return None
+
+def search_city(city_name: str, state: str) -> Optional[Dict]:
+    """Wrapper to run async city search"""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(search_city_async(city_name, state))
 
 async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
     """Get crop recommendation using backend modules directly"""
@@ -397,24 +443,35 @@ if st.session_state.mode == "simple":
             if state_data:
                 cities = state_data.get('cities', [])
         
+        # Reset city selection if state changed
+        if st.session_state.selected_state != selected_state:
+            st.session_state.selected_city = ''
+            st.session_state.selected_city_data = None
+        
+        # Calculate index for city selectbox
+        city_index = 0
+        if st.session_state.selected_city and st.session_state.selected_city in cities:
+            city_index = cities.index(st.session_state.selected_city) + 1
+        
         selected_city = st.selectbox(
             st.session_state.translations.get('city', 'City'),
-            options=[""] + cities,
-            disabled=not selected_state,
-            index=0 if not st.session_state.selected_city else (cities.index(st.session_state.selected_city) + 1 if st.session_state.selected_city in cities else 0)
+            options=[""] + cities if cities else [""],
+            disabled=not selected_state or len(cities) == 0,
+            index=city_index,
+            key="city_selectbox"
         )
         st.session_state.selected_city = selected_city
         
-        # Get city coordinates
+        # Get city coordinates (using WeatherAPI prioritized)
         if selected_state and selected_city:
             if (not st.session_state.selected_city_data or 
                 st.session_state.selected_city_data.get('name') != selected_city):
-                with st.spinner("Getting location coordinates..."):
+                with st.spinner("Getting location coordinates from WeatherAPI..."):
                     city_data = search_city(selected_city, selected_state)
                     if city_data:
                         st.session_state.selected_city_data = city_data
                     else:
-                        # Fallback: use default coordinates
+                        # Last resort: use default coordinates
                         st.session_state.selected_city_data = {
                             'name': selected_city,
                             'state': selected_state,
@@ -463,9 +520,13 @@ if st.session_state.mode == "simple":
         st.markdown("---")
         st.header("Recommendations")
         
-        # Weather summary
+        # Weather summary (like Next.js frontend)
         if result.get('weather_summary'):
-            st.info(f"Weather: {result['weather_summary']}")
+            st.info(f"{result['weather_summary']}")
+        
+        # Model version (like Next.js frontend)
+        model_version = result.get('model_version', 'modular_v1.0')
+        st.caption(f"Model: {model_version}")
         
         # Top crops
         st.subheader(st.session_state.translations.get('top_crops', 'Top Recommended Crops'))
@@ -507,9 +568,9 @@ if st.session_state.mode == "simple":
                         direction_text = "[Positive]" if direction == 'positive' else "[Negative]" if direction == 'negative' else "[Neutral]"
                         method_badge = f" ({method.upper()})" if method != 'rule_based' else ""
                         
-                        st.write(f"{direction_text} **{feature}**: {direction}{method_badge}")
-                        if description:
-                            st.caption(f"   {description}")
+                        # Display like Next.js frontend: Feature: Direction — Description
+                        description_text = f" — {description}" if description else ""
+                        st.write(f"{direction_text} **{feature}**: {direction}{description_text}{method_badge}")
                         st.progress(importance, text=f"Importance: {importance:.1%}")
 
 else:
@@ -636,7 +697,11 @@ else:
         st.header("Recommendations")
         
         if result.get('weather_summary'):
-            st.info(f"Weather: {result['weather_summary']}")
+            st.info(f"{result['weather_summary']}")
+        
+        # Model version
+        model_version = result.get('model_version', 'modular_v1.0')
+        st.caption(f"Model: {model_version}")
         
         st.subheader(st.session_state.translations.get('top_crops', 'Top Recommended Crops'))
         top_crops = result.get('top_crops', [])
@@ -675,9 +740,9 @@ else:
                         direction_text = "[Positive]" if direction == 'positive' else "[Negative]" if direction == 'negative' else "[Neutral]"
                         method_badge = f" ({method.upper()})" if method != 'rule_based' else ""
                         
-                        st.write(f"{direction_text} **{feature}**: {direction}{method_badge}")
-                        if description:
-                            st.caption(f"   {description}")
+                        # Display like Next.js frontend: Feature: Direction — Description
+                        description_text = f" — {description}" if description else ""
+                        st.write(f"{direction_text} **{feature}**: {direction}{description_text}{method_badge}")
                         st.progress(importance, text=f"Importance: {importance:.1%}")
 
 # Footer
