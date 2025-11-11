@@ -421,6 +421,120 @@ class TranslationService:
         
         return feature_translations.get(target_language, {}).get(feature_name, feature_name)
     
+    def translate_state_name(self, state_name: str, target_language: str) -> str:
+        """Translate state name to target language"""
+        if target_language == 'en':
+            return state_name
+        
+        # State name translations
+        state_translations = {
+            'hi': {
+                'Karnataka': 'कर्नाटक',
+                'Maharashtra': 'महाराष्ट्र',
+                'Tamil Nadu': 'तमिलनाडु',
+                'Uttar Pradesh': 'उत्तर प्रदेश',
+                'West Bengal': 'पश्चिम बंगाल',
+                'Gujarat': 'गुजरात',
+                'Rajasthan': 'राजस्थान',
+                'Madhya Pradesh': 'मध्य प्रदेश',
+                'Andhra Pradesh': 'आंध्र प्रदेश',
+                'Telangana': 'तेलंगाना',
+                'Kerala': 'केरल',
+                'Punjab': 'पंजाब',
+                'Haryana': 'हरियाणा',
+                'Bihar': 'बिहार',
+                'Odisha': 'ओडिशा'
+            },
+            'ta': {
+                'Karnataka': 'கர்நாடகா',
+                'Maharashtra': 'மகாராஷ்டிரா',
+                'Tamil Nadu': 'தமிழ்நாடு',
+                'Uttar Pradesh': 'உத்தரப் பிரதேசம்',
+                'West Bengal': 'மேற்கு வங்காளம்',
+                'Gujarat': 'குஜராத்',
+                'Rajasthan': 'ராஜஸ்தான்',
+                'Madhya Pradesh': 'மத்திய பிரதேசம்',
+                'Andhra Pradesh': 'ஆந்திர பிரதேசம்',
+                'Telangana': 'தெலங்காணா',
+                'Kerala': 'கேரளா',
+                'Punjab': 'பஞ்சாப்',
+                'Haryana': 'ஹரியானா',
+                'Bihar': 'பீகார்',
+                'Odisha': 'ஒடிசா'
+            },
+            'te': {
+                'Karnataka': 'కర్ణాటక',
+                'Maharashtra': 'మహారాష్ట్ర',
+                'Tamil Nadu': 'తమిళనాడు',
+                'Uttar Pradesh': 'ఉత్తర ప్రదేశ్',
+                'West Bengal': 'పశ్చిమ బెంగాల్',
+                'Gujarat': 'గుజరాత్',
+                'Rajasthan': 'రాజస్థాన్',
+                'Madhya Pradesh': 'మధ్య ప్రదేశ్',
+                'Andhra Pradesh': 'ఆంధ్ర ప్రదేశ్',
+                'Telangana': 'తెలంగాణ',
+                'Kerala': 'కేరళ',
+                'Punjab': 'పంజాబ్',
+                'Haryana': 'హర్యానా',
+                'Bihar': 'బీహార్',
+                'Odisha': 'ఒడిశా'
+            },
+            'bn': {
+                'Karnataka': 'কর্ণাটক',
+                'Maharashtra': 'মহারাষ্ট্র',
+                'Tamil Nadu': 'তামিলনাড়ু',
+                'Uttar Pradesh': 'উত্তর প্রদেশ',
+                'West Bengal': 'পশ্চিমবঙ্গ',
+                'Gujarat': 'গুজরাট',
+                'Rajasthan': 'রাজস্থান',
+                'Madhya Pradesh': 'মধ্য প্রদেশ',
+                'Andhra Pradesh': 'আন্ধ্র প্রদেশ',
+                'Telangana': 'তেলেঙ্গানা',
+                'Kerala': 'কেরালা',
+                'Punjab': 'পাঞ্জাব',
+                'Haryana': 'হরিয়ানা',
+                'Bihar': 'বিহার',
+                'Odisha': 'ওড়িশা'
+            },
+            'ml': {
+                'Karnataka': 'കർണാടക',
+                'Maharashtra': 'മഹാരാഷ്ട്ര',
+                'Tamil Nadu': 'തമിഴ്നാട്',
+                'Uttar Pradesh': 'ഉത്തർ പ്രദേശ്',
+                'West Bengal': 'പശ്ചിമ ബംഗാൾ',
+                'Gujarat': 'ഗുജറാത്ത്',
+                'Rajasthan': 'രാജസ്ഥാൻ',
+                'Madhya Pradesh': 'മധ്യ പ്രദേശ്',
+                'Andhra Pradesh': 'ആന്ധ്ര പ്രദേശ്',
+                'Telangana': 'തെലംഗാണ',
+                'Kerala': 'കേരളം',
+                'Punjab': 'പഞ്ചാബ്',
+                'Haryana': 'ഹരിയാണ',
+                'Bihar': 'ബിഹാർ',
+                'Odisha': 'ഒഡീഷ'
+            }
+        }
+        
+        return state_translations.get(target_language, {}).get(state_name, state_name)
+    
+    def translate_city_name(self, city_name: str, target_language: str) -> str:
+        """Translate city name to target language using dynamic translation"""
+        if target_language == 'en':
+            return city_name
+        
+        # Check cache first
+        cache_key = (f"city:{city_name}", target_language)
+        if cache_key in self._translation_cache:
+            return self._translation_cache[cache_key]
+        
+        # Use dynamic translation for city names (they may not be in static translations)
+        try:
+            translated = self.translate_dynamic(city_name, target_language)
+            self._translation_cache[cache_key] = translated
+            return translated
+        except:
+            return city_name
+    
     def translate_dynamic(self, text: str, target_language: str, source_language: str = 'en') -> str:
         """
         Translate dynamic content using deep-translator (free Google Translate API).
