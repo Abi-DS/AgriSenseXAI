@@ -253,12 +253,12 @@ def t(text: str, default: str = None) -> str:
             
             # Map common UI text to static translation keys
             ui_mapping = {
-                "API Status": None,
-                "Language": None,
-                "Mode": None,
+                "API Status": "api_status",
+                "Language": "language",
+                "Mode": "mode",
                 "Simple Mode": "simple_mode",
                 "Manual Mode": "manual_mode",
-                "About": None,
+                "About": "about",
                 "City": "city",
                 "State": "state",
                 "Coordinates": "coordinates",
@@ -591,12 +591,27 @@ with st.sidebar:
     st.title("AgroXAI")
     st.markdown("---")
     
+    # Language selector (moved above API status)
+    selected_lang = st.selectbox(
+        t("Language", "language"),
+        options=list(LANGUAGES.keys()),
+        format_func=lambda x: LANGUAGES[x],
+        index=list(LANGUAGES.keys()).index(st.session_state.language) if st.session_state.language in LANGUAGES else 0
+    )
+    if selected_lang != st.session_state.language:
+        st.session_state.language = selected_lang
+        st.session_state.translations = load_translations(selected_lang)
+        # No preloading needed - translations accessed directly in t() function
+        st.rerun()
+    
+    st.markdown("---")
+    
     # Show API key status
+    st.markdown(f"### {t('API Status', 'api_status')}")
     weatherapi_key = os.getenv('WEATHERAPI_KEY', '')
     openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
     ambee_key = os.getenv('AMBEE_API_KEY', '')
     
-    st.markdown(f"### {t('API Status', 'API Status')}")
     if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
         st.success(t("WeatherAPI: Configured", "WeatherAPI: Configured"))
     else:
@@ -614,32 +629,17 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Language selector
-    selected_lang = st.selectbox(
-        t("Language", "Language / भाषा"),
-        options=list(LANGUAGES.keys()),
-        format_func=lambda x: LANGUAGES[x],
-        index=list(LANGUAGES.keys()).index(st.session_state.language) if st.session_state.language in LANGUAGES else 0
-    )
-    if selected_lang != st.session_state.language:
-        st.session_state.language = selected_lang
-        st.session_state.translations = load_translations(selected_lang)
-        # No preloading needed - translations accessed directly in t() function
-        st.rerun()
-    
-    st.markdown("---")
-    
     # Mode selector
     mode = st.radio(
-        t("Mode", "Mode"),
+        t("Mode", "mode"),
         options=["simple", "manual"],
-        format_func=lambda x: t("Simple Mode", "Simple Mode") if x == "simple" else t("Manual Mode", "Manual Mode"),
+        format_func=lambda x: t("Simple Mode", "simple_mode") if x == "simple" else t("Manual Mode", "manual_mode"),
         index=0 if st.session_state.mode == "simple" else 1
     )
     st.session_state.mode = mode
     
     st.markdown("---")
-    st.markdown(f"### {t('About', 'About')}")
+        st.markdown(f"### {t('About', 'About')}")
     st.markdown(f"""
     **{t('AgroXAI', 'AgroXAI')}** {t('provides AI-powered crop recommendations with:', 'provides AI-powered crop recommendations with:')}
     - {t('Real-time weather data', 'Real-time weather data')}
@@ -1114,4 +1114,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
-
