@@ -228,7 +228,17 @@ def t(text: str, default: str = None) -> str:
     """Fast translation helper - uses static translations + cached dynamic translations"""
     language = st.session_state.get('language', 'en')
     if language == 'en':
-        return default or text
+        # For English, return the actual text (not translation keys)
+        # Priority: actual text > formatted default key
+        if text and text.strip() and not text.startswith('_'):
+            # Use the actual text provided (already in proper English)
+            return text
+        # If only default (translation key) is provided, format it nicely
+        if default:
+            # Format default key: "simple_mode_description" -> "Simple Mode Description"
+            formatted = default.replace('_', ' ').title()
+            return formatted
+        return text or ""
     
     # Check cache first (for previously translated content)
     cache_key = f"{language}:{text}"
@@ -285,9 +295,15 @@ def t(text: str, default: str = None) -> str:
                 _translation_cache[cache_key] = result
                 return result
             
-            # Check with default
+            # Check with default (this handles translation keys like "simple_mode_description")
             if default and default in static_translations:
                 result = static_translations[default]
+                _translation_cache[cache_key] = result
+                return result
+            
+            # Also check session state translations (loaded from load_translations)
+            if default and default in st.session_state.translations:
+                result = st.session_state.translations[default]
                 _translation_cache[cache_key] = result
                 return result
             
@@ -297,8 +313,12 @@ def t(text: str, default: str = None) -> str:
     except Exception:
         pass
     
-    # Fallback: return original text
-    result = default or text
+    # Fallback: if default looks like a translation key, try to get from session state
+    if default and default in st.session_state.translations:
+        return st.session_state.translations[default]
+    
+    # Final fallback: return original text (better than showing the key)
+    result = text if text else (default if default else "")
     _translation_cache[cache_key] = result  # Cache even the original
     return result
 
@@ -576,7 +596,7 @@ with st.sidebar:
     openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
     ambee_key = os.getenv('AMBEE_API_KEY', '')
     
-    st.markdown(f"### {t('API Status', 'API Status')}")
+        st.markdown(f"### {t('API Status', 'API Status')}")
     if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
         st.success(t("WeatherAPI: Configured", "WeatherAPI: Configured"))
     else:
@@ -651,14 +671,19 @@ if st.session_state.mode == "simple":
     with col1:
         # State selector - translate state names for display
         language = st.session_state.get('language', 'en')
-        state_options_original = [""] + [s['state'] for s in st.session_state.states]
+        state_options_original = [""] + [s['state'] for s in st.session_state.states] if st.session_state.states else [""]
         
         # Create translated state options for display
-        if language != 'en' and backend and 'translation' in backend:
-            translation_service = backend['translation']
-            state_options_display = [""] + [translation_service.translate_state_name(s['state'], language) for s in st.session_state.states]
-        else:
-            state_options_display = state_options_original
+        state_options_display = state_options_original
+        if language != 'en' and backend and 'translation' in backend and st.session_state.states:
+            try:
+                translation_service = backend['translation']
+                if hasattr(translation_service, 'translate_state_name'):
+                    state_options_display = [""] + [translation_service.translate_state_name(s['state'], language) for s in st.session_state.states]
+            except Exception as e:
+                # Fallback to original if translation fails
+                st.warning(f"Translation error: {e}")
+                state_options_display = state_options_original
         
         previous_state = st.session_state.selected_state
         selected_state_display = st.selectbox(
@@ -694,11 +719,15 @@ if st.session_state.mode == "simple":
             st.warning(t(f"No cities found for {selected_state}. Check locations.json file.", f"No cities found for {selected_state}. Check locations.json file."))
         
         # Create translated city options for display
+        cities_display = cities_original
         if language != 'en' and backend and 'translation' in backend and cities_original:
-            translation_service = backend['translation']
-            cities_display = [translation_service.translate_city_name(city, language) for city in cities_original]
-        else:
-            cities_display = cities_original
+            try:
+                translation_service = backend['translation']
+                if hasattr(translation_service, 'translate_city_name'):
+                    cities_display = [translation_service.translate_city_name(city, language) for city in cities_original]
+            except Exception as e:
+                # Fallback to original if translation fails
+                cities_display = cities_original
         
         # Calculate index for city selectbox
         city_index = 0
@@ -753,9 +782,15 @@ if st.session_state.mode == "simple":
             city_display = city_data.get('name', selected_city)
             state_display = city_data.get('state', selected_state)
             if language != 'en' and backend and 'translation' in backend:
-                translation_service = backend['translation']
-                city_display = translation_service.translate_city_name(city_display, language)
-                state_display = translation_service.translate_state_name(state_display, language)
+                try:
+                    translation_service = backend['translation']
+                    if hasattr(translation_service, 'translate_city_name'):
+                        city_display = translation_service.translate_city_name(city_display, language)
+                    if hasattr(translation_service, 'translate_state_name'):
+                        state_display = translation_service.translate_state_name(state_display, language)
+                except Exception:
+                    # Keep original names if translation fails
+                    pass
             
             st.write(f"**{t('City', 'city')}:** {city_display}")
             st.write(f"**{t('State', 'state')}:** {state_display}")
@@ -907,11 +942,15 @@ else:
         state_options_original = [""] + [s['state'] for s in st.session_state.states]
         
         # Create translated state options for display
-        if language != 'en' and backend and 'translation' in backend:
-            translation_service = backend['translation']
-            state_options_display = [""] + [translation_service.translate_state_name(s['state'], language) for s in st.session_state.states]
-        else:
-            state_options_display = state_options_original
+        state_options_display = state_options_original
+        if language != 'en' and backend and 'translation' in backend and st.session_state.states:
+            try:
+                translation_service = backend['translation']
+                if hasattr(translation_service, 'translate_state_name'):
+                    state_options_display = [""] + [translation_service.translate_state_name(s['state'], language) for s in st.session_state.states]
+            except Exception as e:
+                # Fallback to original if translation fails
+                state_options_display = state_options_original
         
         manual_state_display = st.selectbox(
             t("State", "state"),
@@ -934,11 +973,15 @@ else:
                 manual_cities_original = state_data.get('cities', [])
         
         # Create translated city options for display
+        manual_cities_display = manual_cities_original
         if language != 'en' and backend and 'translation' in backend and manual_cities_original:
-            translation_service = backend['translation']
-            manual_cities_display = [translation_service.translate_city_name(city, language) for city in manual_cities_original]
-        else:
-            manual_cities_display = manual_cities_original
+            try:
+                translation_service = backend['translation']
+                if hasattr(translation_service, 'translate_city_name'):
+                    manual_cities_display = [translation_service.translate_city_name(city, language) for city in manual_cities_original]
+            except Exception:
+                # Fallback to original if translation fails
+                manual_cities_display = manual_cities_original
         
         manual_city_display = st.selectbox(
             t("City", "city"),
@@ -967,9 +1010,15 @@ else:
                 city_display = manual_city
                 state_display = manual_state
                 if language != 'en' and backend and 'translation' in backend:
-                    translation_service = backend['translation']
-                    city_display = translation_service.translate_city_name(manual_city, language)
-                    state_display = translation_service.translate_state_name(manual_state, language)
+                    try:
+                        translation_service = backend['translation']
+                        if hasattr(translation_service, 'translate_city_name'):
+                            city_display = translation_service.translate_city_name(manual_city, language)
+                        if hasattr(translation_service, 'translate_state_name'):
+                            state_display = translation_service.translate_state_name(manual_state, language)
+                    except Exception:
+                        # Keep original names if translation fails
+                        pass
                 st.success(t(f"Location: {city_display}, {state_display}", f"Location: {city_display}, {state_display}"))
                 st.caption(t(f"Coordinates: {manual_lat:.4f}, {manual_lon:.4f}", f"Coordinates: {manual_lat:.4f}, {manual_lon:.4f}"))
         
@@ -1065,4 +1114,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
-
