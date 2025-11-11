@@ -119,7 +119,8 @@ class TranslationService:
                 'api_status': 'API Status',
                 'language': 'Language',
                 'mode': 'Mode',
-                'about': 'About'
+                'about': 'About',
+                'listen': 'Listen'
             },
             'hi': {
                 'welcome': 'अग्रीसेंस एक्सएआई में आपका स्वागत है',
@@ -169,7 +170,8 @@ class TranslationService:
                 'api_status': 'API स्थिति',
                 'language': 'भाषा',
                 'mode': 'मोड',
-                'about': 'के बारे में'
+                'about': 'के बारे में',
+                'listen': 'सुनें'
             },
             'ta': {
                 'welcome': 'அக்ரிசென்ஸ் எக்ஸ்ஏஐக்கு வரவேற்கிறோம்',
@@ -219,7 +221,8 @@ class TranslationService:
                 'api_status': 'API நிலை',
                 'language': 'மொழி',
                 'mode': 'முறை',
-                'about': 'பற்றி'
+                'about': 'பற்றி',
+                'listen': 'கேளுங்கள்'
             },
             'te': {
                 'welcome': 'అగ్రిసెన్స్ ఎక్స్ఏఐకు స్వాగతం',
@@ -269,7 +272,8 @@ class TranslationService:
                 'api_status': 'API స్థితి',
                 'language': 'భాష',
                 'mode': 'మోడ్',
-                'about': 'గురించి'
+                'about': 'గురించి',
+                'listen': 'వినండి'
             },
             'bn': {
                 'welcome': 'অগ্রিসেন্স এক্সএআইতে স্বাগতম',
@@ -319,7 +323,8 @@ class TranslationService:
                 'api_status': 'API অবস্থা',
                 'language': 'ভাষা',
                 'mode': 'মোড',
-                'about': 'সম্পর্কে'
+                'about': 'সম্পর্কে',
+                'listen': 'শুনুন'
             },
             'ml': {
                 'welcome': 'അഗ്രിസെൻസ് എക്സ്എഐയിലേക്ക് സ്വാഗതം',
@@ -370,7 +375,8 @@ class TranslationService:
                 'api_status': 'API സ്ഥിതി',
                 'language': 'ഭാഷ',
                 'mode': 'മോഡ്',
-                'about': 'കുറിച്ച്'
+                'about': 'കുറിച്ച്',
+                'listen': 'കേൾക്കുക'
             }
         }
     
