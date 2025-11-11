@@ -576,7 +576,7 @@ with st.sidebar:
     openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
     ambee_key = os.getenv('AMBEE_API_KEY', '')
     
-    st.markdown(f"### {t('API Status', 'API Status')}")
+        st.markdown(f"### {t('API Status', 'API Status')}")
     if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
         st.success(t("WeatherAPI: Configured", "WeatherAPI: Configured"))
     else:
@@ -619,7 +619,7 @@ with st.sidebar:
     st.session_state.mode = mode
     
     st.markdown("---")
-    st.markdown(f"### {t('About', 'About')}")
+        st.markdown(f"### {t('About', 'About')}")
     st.markdown(f"""
     **{t('AgroXAI', 'AgroXAI')}** {t('provides AI-powered crop recommendations with:', 'provides AI-powered crop recommendations with:')}
     - {t('Real-time weather data', 'Real-time weather data')}
@@ -639,20 +639,41 @@ st.markdown(t("Get intelligent crop recommendations with explainable AI", "Get i
 if st.session_state.mode == "simple":
     # Simple Mode - State/City Selection
     st.header(t("Simple Mode - Select Your Location", "Simple Mode - Select Your Location"))
-    st.info(t("Just select your state and city. We'll automatically get weather and soil data!", "Just select your state and city. We'll automatically get weather and soil data!"))
+    st.info(t("Just select your state and city. We'll automatically get weather and soil data!", "simple_mode_description"))
+    
+    # Translate instruction text
+    instruction_text = t("Select your location and click 'Get Recommendation' to see crop suggestions.", "select_and_submit")
+    if instruction_text:
+        st.caption(instruction_text)
     
     col1, col2 = st.columns(2)
     
     with col1:
-        # State selector
-        state_options = [""] + [s['state'] for s in st.session_state.states]
+        # State selector - translate state names for display
+        language = st.session_state.get('language', 'en')
+        state_options_original = [""] + [s['state'] for s in st.session_state.states]
+        
+        # Create translated state options for display
+        if language != 'en' and backend and 'translation' in backend:
+            translation_service = backend['translation']
+            state_options_display = [""] + [translation_service.translate_state_name(s['state'], language) for s in st.session_state.states]
+        else:
+            state_options_display = state_options_original
+        
         previous_state = st.session_state.selected_state
-        selected_state = st.selectbox(
-            st.session_state.translations.get('state', 'State'),
-            options=state_options,
-            index=0 if not st.session_state.selected_state else (state_options.index(st.session_state.selected_state) if st.session_state.selected_state in state_options else 0),
+        selected_state_display = st.selectbox(
+            t("State", "state"),
+            options=state_options_display,
+            index=0 if not st.session_state.selected_state else (state_options_original.index(st.session_state.selected_state) if st.session_state.selected_state in state_options_original else 0),
             key="state_selectbox"
         )
+        
+        # Map displayed state back to original state name
+        if selected_state_display:
+            selected_state_index = state_options_display.index(selected_state_display)
+            selected_state = state_options_original[selected_state_index] if selected_state_index < len(state_options_original) else ""
+        else:
+            selected_state = ""
         
         # Reset city if state changed
         if previous_state != selected_state:
@@ -661,32 +682,48 @@ if st.session_state.mode == "simple":
         
         st.session_state.selected_state = selected_state
         
-        # City selector (depends on state)
-        cities = []
+        # City selector (depends on state) - translate city names for display
+        cities_original = []
         if selected_state:
             state_data = next((s for s in st.session_state.states if s['state'] == selected_state), None)
             if state_data:
-                cities = state_data.get('cities', [])
+                cities_original = state_data.get('cities', [])
         
         # Debug info (can be removed later)
-        if selected_state and len(cities) == 0:
+        if selected_state and len(cities_original) == 0:
             st.warning(t(f"No cities found for {selected_state}. Check locations.json file.", f"No cities found for {selected_state}. Check locations.json file."))
+        
+        # Create translated city options for display
+        if language != 'en' and backend and 'translation' in backend and cities_original:
+            translation_service = backend['translation']
+            cities_display = [translation_service.translate_city_name(city, language) for city in cities_original]
+        else:
+            cities_display = cities_original
         
         # Calculate index for city selectbox
         city_index = 0
-        if st.session_state.selected_city and cities and st.session_state.selected_city in cities:
-            city_index = cities.index(st.session_state.selected_city) + 1
+        if st.session_state.selected_city and cities_original and st.session_state.selected_city in cities_original:
+            city_index = cities_original.index(st.session_state.selected_city) + 1
         
-        # City options
-        city_options = [""] + cities if cities else [""]
+        # City options (display translated, but track original)
+        city_options_display = [""] + cities_display if cities_display else [""]
+        city_options_original = [""] + cities_original if cities_original else [""]
         
-        selected_city = st.selectbox(
-            st.session_state.translations.get('city', 'City'),
-            options=city_options,
-            disabled=not selected_state or len(cities) == 0,
+        selected_city_display = st.selectbox(
+            t("City", "city"),
+            options=city_options_display,
+            disabled=not selected_state or len(cities_original) == 0,
             index=city_index,
             key="city_selectbox"
         )
+        
+        # Map displayed city back to original city name
+        if selected_city_display:
+            selected_city_index = city_options_display.index(selected_city_display)
+            selected_city = city_options_original[selected_city_index] if selected_city_index < len(city_options_original) else ""
+        else:
+            selected_city = ""
+        
         st.session_state.selected_city = selected_city
         
         # Get city coordinates (using WeatherAPI prioritized)
@@ -708,11 +745,21 @@ if st.session_state.mode == "simple":
     
     with col2:
         if st.session_state.selected_city_data:
-            st.success(t("Location Selected", "Location Selected"))
+            st.success(t("Location Selected", "location_selected"))
             city_data = st.session_state.selected_city_data
-            st.write(f"**{t('City', 'City')}:** {city_data.get('name', selected_city)}")
-            st.write(f"**{t('State', 'State')}:** {city_data.get('state', selected_state)}")
-            st.write(f"**{t('Coordinates', 'Coordinates')}:** {city_data.get('latitude', 0):.4f}, {city_data.get('longitude', 0):.4f}")
+            language = st.session_state.get('language', 'en')
+            
+            # Translate city and state names for display
+            city_display = city_data.get('name', selected_city)
+            state_display = city_data.get('state', selected_state)
+            if language != 'en' and backend and 'translation' in backend:
+                translation_service = backend['translation']
+                city_display = translation_service.translate_city_name(city_display, language)
+                state_display = translation_service.translate_state_name(state_display, language)
+            
+            st.write(f"**{t('City', 'city')}:** {city_display}")
+            st.write(f"**{t('State', 'state')}:** {state_display}")
+            st.write(f"**{t('Coordinates', 'coordinates')}:** {city_data.get('latitude', 0):.4f}, {city_data.get('longitude', 0):.4f}")
     
     # Submit button
     if st.button(
@@ -853,29 +900,59 @@ else:
         )
     
     with col2:
-        st.subheader(t("Location", "Location"))
+        st.subheader(t("Location", "location"))
         
-        # State selector
-        state_options = [""] + [s['state'] for s in st.session_state.states]
-        manual_state = st.selectbox(
-            t("State", "State"),
-            options=state_options,
+        # State selector - translate state names for display
+        language = st.session_state.get('language', 'en')
+        state_options_original = [""] + [s['state'] for s in st.session_state.states]
+        
+        # Create translated state options for display
+        if language != 'en' and backend and 'translation' in backend:
+            translation_service = backend['translation']
+            state_options_display = [""] + [translation_service.translate_state_name(s['state'], language) for s in st.session_state.states]
+        else:
+            state_options_display = state_options_original
+        
+        manual_state_display = st.selectbox(
+            t("State", "state"),
+            options=state_options_display,
             key="manual_state"
         )
         
-        # City selector
-        manual_cities = []
+        # Map displayed state back to original state name
+        if manual_state_display:
+            manual_state_index = state_options_display.index(manual_state_display)
+            manual_state = state_options_original[manual_state_index] if manual_state_index < len(state_options_original) else ""
+        else:
+            manual_state = ""
+        
+        # City selector - translate city names for display
+        manual_cities_original = []
         if manual_state:
             state_data = next((s for s in st.session_state.states if s['state'] == manual_state), None)
             if state_data:
-                manual_cities = state_data.get('cities', [])
+                manual_cities_original = state_data.get('cities', [])
         
-        manual_city = st.selectbox(
-            t("City", "City"),
-            options=[""] + manual_cities,
+        # Create translated city options for display
+        if language != 'en' and backend and 'translation' in backend and manual_cities_original:
+            translation_service = backend['translation']
+            manual_cities_display = [translation_service.translate_city_name(city, language) for city in manual_cities_original]
+        else:
+            manual_cities_display = manual_cities_original
+        
+        manual_city_display = st.selectbox(
+            t("City", "city"),
+            options=[""] + manual_cities_display,
             disabled=not manual_state,
             key="manual_city"
         )
+        
+        # Map displayed city back to original city name
+        if manual_city_display:
+            manual_city_index = ([""] + manual_cities_display).index(manual_city_display)
+            manual_city = ([""] + manual_cities_original)[manual_city_index] if manual_city_index < len([""] + manual_cities_original) else ""
+        else:
+            manual_city = ""
         
         # Get coordinates
         manual_lat = 20.5937
@@ -886,7 +963,14 @@ else:
             if city_data:
                 manual_lat = city_data.get('latitude', 20.5937)
                 manual_lon = city_data.get('longitude', 78.9629)
-                st.success(t(f"Location: {manual_city}, {manual_state}", f"Location: {manual_city}, {manual_state}"))
+                # Translate names for display
+                city_display = manual_city
+                state_display = manual_state
+                if language != 'en' and backend and 'translation' in backend:
+                    translation_service = backend['translation']
+                    city_display = translation_service.translate_city_name(manual_city, language)
+                    state_display = translation_service.translate_state_name(manual_state, language)
+                st.success(t(f"Location: {city_display}, {state_display}", f"Location: {city_display}, {state_display}"))
                 st.caption(t(f"Coordinates: {manual_lat:.4f}, {manual_lon:.4f}", f"Coordinates: {manual_lat:.4f}, {manual_lon:.4f}"))
         
         use_weather = st.checkbox(
@@ -981,4 +1065,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
-
