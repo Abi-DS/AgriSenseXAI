@@ -43,6 +43,7 @@ try:
         weatherapi_secret = st.secrets.get('WEATHERAPI_KEY', '')
         openweather_secret = st.secrets.get('OPENWEATHER_API_KEY', '')
         ambee_secret = st.secrets.get('AMBEE_API_KEY', '')
+        gemini_secret = st.secrets.get('GEMINI_API_KEY', '')
         
         if weatherapi_secret:
             os.environ['WEATHERAPI_KEY'] = weatherapi_secret
@@ -50,6 +51,8 @@ try:
             os.environ['OPENWEATHER_API_KEY'] = openweather_secret
         if ambee_secret:
             os.environ['AMBEE_API_KEY'] = ambee_secret
+        if gemini_secret:
+            os.environ['GEMINI_API_KEY'] = gemini_secret
 except (FileNotFoundError, AttributeError, KeyError, Exception) as e:
     # Secrets not available (local dev or not configured)
     pass
@@ -110,8 +113,14 @@ def initialize_backend():
         weatherapi_key = os.getenv('WEATHERAPI_KEY', '')
         openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
         ambee_key = os.getenv('AMBEE_API_KEY', '')
+        gemini_key = os.getenv('GEMINI_API_KEY', '')
         
         # Log API key status (for debugging in Streamlit Cloud logs)
+        if gemini_key and len(gemini_key) > 10:
+            print(f"[INFO] Gemini Pro API key is set (length: {len(gemini_key)}) - Fast translations enabled!")
+        else:
+            print("[INFO] Gemini Pro API key not set - using free deep-translator")
+        
         if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
             print(f"[INFO] WeatherAPI key is set (length: {len(weatherapi_key)})")
         else:
@@ -569,8 +578,14 @@ with st.sidebar:
     weatherapi_key = os.getenv('WEATHERAPI_KEY', '')
     openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
     ambee_key = os.getenv('AMBEE_API_KEY', '')
+    gemini_key = os.getenv('GEMINI_API_KEY', '')
     
     st.markdown(f"### {t('API Status', 'API Status')}")
+    if gemini_key and len(gemini_key) > 10:
+        st.success(t("Gemini Pro: Configured (Fast Translation)", "Gemini Pro: Configured (Fast Translation)"))
+    else:
+        st.info(t("Gemini Pro: Not set (using free translator)", "Gemini Pro: Not set (using free translator)"))
+    
     if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
         st.success(t("WeatherAPI: Configured", "WeatherAPI: Configured"))
     else:
