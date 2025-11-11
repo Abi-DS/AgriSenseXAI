@@ -444,12 +444,16 @@ class TranslationService:
             return self._translation_cache[cache_key]
         
         # Step 2: Check static translations FIRST (no API call needed!)
-        static_translated = self.translate_explanation(text, target_language)
-        if static_translated != text:
-            # Found in static translations - cache and return
-            self._translation_cache[cache_key] = static_translated
-            logger.debug(f"Static translation found for: '{text[:30]}...'")
-            return static_translated
+        # Use translate_explanation which ONLY uses static translations (no recursion)
+        try:
+            static_translated = self.translate_explanation(text, target_language)
+            if static_translated and static_translated != text:
+                # Found in static translations - cache and return
+                self._translation_cache[cache_key] = static_translated
+                logger.debug(f"Static translation found for: '{text[:30]}...'")
+                return static_translated
+        except Exception as e:
+            logger.debug(f"Static translation check failed: {e}, proceeding to API")
         
         # Step 3: Only use Gemini/API for truly dynamic content (not in static translations)
         # Try Gemini Pro first (faster and more reliable)
@@ -463,11 +467,15 @@ class TranslationService:
                 response = self.gemini_model.generate_content(prompt)
                 translated = response.text.strip()
                 
-                if translated and translated != text:
+                if translated and translated.strip() and translated != text:
                     logger.info(f"Translated via Gemini Pro: '{text[:30]}...' to {target_language}")
                     # Cache the translation
                     self._translation_cache[cache_key] = translated
                     return translated
+                else:
+                    # Translation failed or returned empty - return original
+                    logger.debug(f"Gemini returned empty/same for '{text[:30]}...', using original")
+                    return text
             except Exception as e:
                 logger.warning(f"Gemini Pro translation failed: {e}, falling back to deep-translator")
         
@@ -498,21 +506,18 @@ class TranslationService:
                     self._translation_cache[cache_key] = translated
                     return translated
                 else:
-                    # Translation failed or returned same - use static fallback
-                    static_translated = self.translate_explanation(text, target_language)
-                    return static_translated if static_translated != text else text
+                    # Translation failed or returned same - return original
+                    return text
                     
             except Exception as translate_error:
                 logger.warning(f"Translation API error for '{text[:30]}...': {translate_error}")
-                # Fallback to static translations
-                static_translated = self.translate_explanation(text, target_language)
-                return static_translated if static_translated != text else text
+                # Return original text on error (don't try static to avoid recursion)
+                return text
                 
         except Exception as e:
             logger.error(f"Dynamic translation error: {e}")
-            # Fallback to static translations
-            static_translated = self.translate_explanation(text, target_language)
-            return static_translated if static_translated != text else text
+            # Return original text on error
+            return text
     
     def translate_batch(self, texts: List[str], target_language: str, source_language: str = 'en') -> List[str]:
         """
@@ -541,14 +546,18 @@ class TranslationService:
         texts_to_translate = []
         
         for idx, text in zip(text_indices, texts_to_check):
-            static_translated = self.translate_explanation(text, target_language)
-            if static_translated != text:
-                # Found in static translations - cache and use
-                cache_key = (text.strip(), target_language)
-                self._translation_cache[cache_key] = static_translated
-                static_results[idx] = static_translated
-            else:
-                # Not in static - needs dynamic translation
+            try:
+                static_translated = self.translate_explanation(text, target_language)
+                if static_translated and static_translated != text:
+                    # Found in static translations - cache and use
+                    cache_key = (text.strip(), target_language)
+                    self._translation_cache[cache_key] = static_translated
+                    static_results[idx] = static_translated
+                else:
+                    # Not in static - needs dynamic translation
+                    texts_to_translate.append(text)
+            except Exception:
+                # If static check fails, treat as dynamic
                 texts_to_translate.append(text)
         
         # If all texts are cached or in static translations, return immediately (no API calls!)
@@ -602,10 +611,15 @@ class TranslationService:
                 
                 if len(translated_list) == len(unique_texts):
                     logger.info(f"Batch translated {len(unique_texts)} unique texts via Gemini Pro to {target_language} (1 API call)")
-                    translated_unique = translated_list
-                    # Cache all translations
-                    for orig, trans in zip(unique_texts, translated_unique):
-                        self._translation_cache[(orig, target_language)] = trans
+                    # Ensure no None values - use original if translation is None/empty
+                    translated_unique = []
+                    for orig, trans in zip(unique_texts, translated_list):
+                        if trans and trans.strip():
+                            clean_trans = trans.strip()
+                            translated_unique.append(clean_trans)
+                            self._translation_cache[(orig, target_language)] = clean_trans
+                        else:
+                            translated_unique.append(orig)  # Use original if translation failed
                 else:
                     logger.warning(f"Gemini batch split mismatch ({len(translated_list)} vs {len(unique_texts)}), falling back")
                     translated_unique = None
@@ -756,21 +770,17 @@ class TranslationService:
         return apply_translations(obj)
     
     def translate_explanation(self, explanation: str, target_language: str) -> str:
-        """Translate explanation text to target language (with dynamic fallback)"""
-        if target_language == 'en':
+        """
+        Translate explanation text using ONLY static translations (NO API calls, NO recursion).
+        This is used for UI text, labels, and common phrases.
+        """
+        if target_language == 'en' or not explanation or not explanation.strip():
             return explanation
         
         if target_language not in self.translations:
             return explanation
         
-        # Try dynamic translation first if available
-        if self.use_dynamic_translation:
-            try:
-                return self.translate_dynamic(explanation, target_language)
-            except Exception as e:
-                logger.warning(f"Dynamic translation failed, using static: {e}")
-        
-        # Get full explanation translations
+        # Get full explanation translations (static only)
         explanation_translations = self._get_explanation_translations()
         lang_translations = explanation_translations.get(target_language, {})
         
