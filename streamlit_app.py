@@ -71,6 +71,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Add global TTS script (only once)
+st.markdown("""
+<script>
+function speakText(text, lang) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang === 'hi' ? 'hi-IN' : lang === 'ta' ? 'ta-IN' : lang === 'te' ? 'te-IN' : lang === 'bn' ? 'bn-IN' : lang === 'ml' ? 'ml-IN' : 'en-US';
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        window.speechSynthesis.speak(utterance);
+    } else {
+        alert('Text-to-speech not supported in your browser');
+    }
+}
+</script>
+""", unsafe_allow_html=True)
+
 # Language options
 LANGUAGES = {
     "en": "English",
@@ -639,7 +657,7 @@ with st.sidebar:
     st.session_state.mode = mode
     
     st.markdown("---")
-    st.markdown(f"### {t('About', 'About')}")
+        st.markdown(f"### {t('About', 'About')}")
     st.markdown(f"""
     **{t('AgroXAI', 'AgroXAI')}** {t('provides AI-powered crop recommendations with:', 'provides AI-powered crop recommendations with:')}
     - {t('Real-time weather data', 'Real-time weather data')}
@@ -829,9 +847,23 @@ if st.session_state.mode == "simple":
         st.markdown("---")
         st.header(t("Recommendations", "Recommendations"))
         
-        # Weather summary (like Next.js frontend)
+        # Weather summary (like Next.js frontend) with TTS
         if result.get('weather_summary'):
-            st.info(f"{result['weather_summary']}")
+            weather_text = result['weather_summary']
+            col1, col2 = st.columns([10, 1])
+            with col1:
+                st.info(f"{weather_text}")
+            with col2:
+                language = st.session_state.get('language', 'en')
+                lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
+                weather_escaped = weather_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
+                st.markdown(f"""
+                <button onclick="speakText('{weather_escaped}', '{lang_code}')" 
+                        style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
+                        title="{t('Listen', 'listen')}">
+                    🔊
+                </button>
+                """, unsafe_allow_html=True)
         
         # Model version (like Next.js frontend)
         model_version = result.get('model_version', 'modular_v1.0')
@@ -861,7 +893,21 @@ if st.session_state.mode == "simple":
             explanation_text = exp.get('text_translated') or exp.get('text', '')
             
             with st.expander(f"{crop_name}", expanded=(exp == explanations[0])):
-                st.write(explanation_text)
+                # Add TTS button next to explanation
+                col1, col2 = st.columns([10, 1])
+                with col1:
+                    st.write(explanation_text)
+                with col2:
+                    language = st.session_state.get('language', 'en')
+                    lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
+                    explanation_escaped = explanation_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
+                    st.markdown(f"""
+                    <button onclick="speakText('{explanation_escaped}', '{lang_code}')" 
+                            style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
+                            title="{t('Listen', 'listen')}">
+                        🔊
+                    </button>
+                    """, unsafe_allow_html=True)
                 
                 # Attributions
                 attributions = exp.get('attributions', [])
@@ -1060,7 +1106,21 @@ else:
         st.header(t("Recommendations", "Recommendations"))
         
         if result.get('weather_summary'):
-            st.info(f"{result['weather_summary']}")
+            weather_text = result['weather_summary']
+            col1, col2 = st.columns([10, 1])
+            with col1:
+                st.info(f"{weather_text}")
+            with col2:
+                language = st.session_state.get('language', 'en')
+                lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
+                weather_escaped = weather_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
+                st.markdown(f"""
+                <button onclick="speakText('{weather_escaped}', '{lang_code}')" 
+                        style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
+                        title="{t('Listen', 'listen')}">
+                    🔊
+                </button>
+                """, unsafe_allow_html=True)
         
         # Model version
         model_version = result.get('model_version', 'modular_v1.0')
@@ -1088,7 +1148,21 @@ else:
             explanation_text = exp.get('text_translated') or exp.get('text', '')
             
             with st.expander(f"{crop_name}", expanded=(exp == explanations[0])):
-                st.write(explanation_text)
+                # Add TTS button next to explanation
+                col1, col2 = st.columns([10, 1])
+                with col1:
+                    st.write(explanation_text)
+                with col2:
+                    language = st.session_state.get('language', 'en')
+                    lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
+                    explanation_escaped = explanation_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
+                    st.markdown(f"""
+                    <button onclick="speakText('{explanation_escaped}', '{lang_code}')" 
+                            style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
+                            title="{t('Listen', 'listen')}">
+                        🔊
+                    </button>
+                    """, unsafe_allow_html=True)
                 
                 attributions = exp.get('attributions', [])
                 if attributions:
@@ -1114,4 +1188,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
-
