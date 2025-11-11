@@ -1,0 +1,63 @@
+[
+  {
+    "state": "Tamil Nadu",
+    "district": "Chennai",
+    "lat": 13.0827,
+    "lon": 80.2707,
+    "ph": 6.2,
+    "nitrogen": 48,
+    "phosphorus": 28,
+    "potassium": 38,
+    "moisture": 58,
+    "organic_matter": 3.8
+  },
+  {
+    "state": "Karnataka",
+    "district": "Bengaluru Urban",
+    "lat": 12.9716,
+    "lon": 77.5946,
+    "ph": 6.5,
+    "nitrogen": 45,
+    "phosphorus": 32,
+    "potassium": 42,
+    "moisture": 52,
+    "organic_matter": 3.2
+  },
+  {
+    "state": "Kerala",
+    "district": "Kochi",
+    "lat": 9.9312,
+    "lon": 76.2673,
+    "ph": 5.8,
+    "nitrogen": 55,
+    "phosphorus": 35,
+    "potassium": 50,
+    "moisture": 72,
+    "organic_matter": 4.5
+  },
+  {
+    "state": "Punjab",
+    "district": "Ludhiana",
+    "lat": 30.9010,
+    "lon": 75.8573,
+    "ph": 7.8,
+    "nitrogen": 65,
+    "phosphorus": 42,
+    "potassium": 55,
+    "moisture": 45,
+    "organic_matter": 2.8
+  },
+  {
+    "state": "Maharashtra",
+    "district": "Mumbai",
+    "lat": 19.0760,
+    "lon": 72.8777,
+    "ph": 6.8,
+    "nitrogen": 42,
+    "phosphorus": 30,
+    "potassium": 35,
+    "moisture": 60,
+    "organic_matter": 3.0
+  }
+]
+

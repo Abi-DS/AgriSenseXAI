@@ -1,0 +1,10 @@
+{
+  "ph": {"min": 4.5, "max": 9.0, "optimal": [6.0, 7.5]},
+  "nitrogen": {"min": 10, "max": 200, "optimal": [40, 80]},
+  "phosphorus": {"min": 5, "max": 100, "optimal": [20, 50]},
+  "potassium": {"min": 10, "max": 300, "optimal": [50, 150]},
+  "moisture": {"min": 10, "max": 90, "optimal": [40, 70]},
+  "organic_matter": {"min": 0.5, "max": 8.0, "optimal": [2.0, 5.0]}
+}
+
+
