@@ -217,104 +217,62 @@ def load_translations(language: str) -> Dict:
 
 def preload_ui_translations(language: str):
     """Pre-translate and cache all UI text using STATIC translations (FAST - no API calls)"""
-    if language == 'en':
-        st.session_state.ui_translations = {}
-        return
-    
-    if not backend or 'translation' not in backend:
-        return
-    
-    # Get static translations from translation service (already pre-loaded, no API calls!)
-    translation_service = backend['translation']
-    static_translations = translation_service.translations.get(language, {})
-    
-    # Map UI text to static translation keys
-    ui_mapping = {
-        "API Status": "api_status",
-        "Language": "language",
-        "Mode": "mode",
-        "Simple Mode": "simple_mode",
-        "Manual Mode": "manual_mode",
-        "About": "about",
-        "City": "city",
-        "State": "state",
-        "Coordinates": "coordinates",
-        "Recommendations": "recommendations",
-        "Key Factors": "key_factors",
-        "Loading location data...": "loading",
-        "Soil Parameters": "soil_parameters",
-        "Location": "location",
-        "Location Selected": "location_selected",
-        "Get Crop Recommendation": "get_recommendation",
-        "Top Recommended Crops": "top_crops",
-        "Why These Crops?": "explanations",
-    }
-    
-    # Build translation dictionary using static translations (instant!)
-    translated_dict = {}
-    for english_text, translation_key in ui_mapping.items():
-        translated_dict[english_text] = static_translations.get(translation_key, english_text)
-    
-    # For texts not in static translations, use simple word mapping or keep English
-    # (We'll translate these on-demand only if needed, not during preload)
-    additional_texts = {
-        "WeatherAPI: Configured": "WeatherAPI: Configured",  # Keep English for technical terms
-        "WeatherAPI: Not set (using fallback)": "WeatherAPI: Not set (using fallback)",
-        "OpenWeatherMap: Configured": "OpenWeatherMap: Configured",
-        "OpenWeatherMap: Not set": "OpenWeatherMap: Not set",
-        "Ambee Soil API: Configured": "Ambee Soil API: Configured",
-        "Ambee Soil API: Not set (using estimates)": "Ambee Soil API: Not set (using estimates)",
-        "AgroXAI": "AgroXAI",  # Brand name
-        "AgroXAI - Crop Recommendation System": static_translations.get('welcome', 'AgroXAI - Crop Recommendation System'),
-        "Get intelligent crop recommendations with explainable AI": static_translations.get('welcome', 'Get intelligent crop recommendations with explainable AI'),
-        "Simple Mode - Select Your Location": static_translations.get('select_location', 'Simple Mode - Select Your Location'),
-        "Just select your state and city. We'll automatically get weather and soil data!": static_translations.get('simple_mode_description', "Just select your state and city. We'll automatically get weather and soil data!"),
-        "Getting location coordinates from WeatherAPI...": static_translations.get('loading', 'Getting location coordinates from WeatherAPI...'),
-        "Getting recommendations with AI analysis...": static_translations.get('loading', 'Getting recommendations with AI analysis...'),
-        "Manual Mode - Enter Soil Parameters": static_translations.get('manual_mode', 'Manual Mode - Enter Soil Parameters'),
-        "Enter your soil parameters manually for precise recommendations": static_translations.get('submit_to_see', 'Enter your soil parameters manually for precise recommendations'),
-        "Use weather data": static_translations.get('optional', 'Use weather data'),
-        "Analyzing with AI...": static_translations.get('loading', 'Analyzing with AI...'),
-        "Model": "Model",  # Technical term
-        "Confidence": "Confidence",  # Technical term
-        "Importance": "Importance",  # Technical term
-    }
-    
-    translated_dict.update(additional_texts)
-    st.session_state.ui_translations = translated_dict
+    # Skip preloading - we'll use static translations directly in t() function
+    # This avoids any potential blocking issues
+    pass
 
 def t(text: str, default: str = None) -> str:
-    """Fast translation helper - uses pre-cached translations"""
+    """Fast translation helper - uses static translations directly (NO API calls, NO blocking)"""
     language = st.session_state.get('language', 'en')
     if language == 'en':
         return default or text
     
-    # First check cached UI translations (fastest)
-    ui_translations = st.session_state.get('ui_translations', {})
-    if text in ui_translations:
-        return ui_translations[text]
+    # Try to get static translations directly from backend (if available)
+    try:
+        if backend and 'translation' in backend:
+            translation_service = backend['translation']
+            static_translations = translation_service.translations.get(language, {})
+            
+            # Map common UI text to static translation keys
+            ui_mapping = {
+                "API Status": None,  # Keep as is
+                "Language": None,
+                "Mode": None,
+                "Simple Mode": "simple_mode",
+                "Manual Mode": "manual_mode",
+                "About": None,
+                "City": "city",
+                "State": "state",
+                "Coordinates": "coordinates",
+                "Recommendations": "recommendations",
+                "Key Factors": "key_factors",
+                "Loading location data...": "loading",
+                "Soil Parameters": "soil_parameters",
+                "Location": "location",
+                "Location Selected": "location_selected",
+                "Get Crop Recommendation": "get_recommendation",
+                "Top Recommended Crops": "top_crops",
+                "Why These Crops?": "explanations",
+            }
+            
+            # Check if text matches a mapping
+            if text in ui_mapping:
+                key = ui_mapping[text]
+                if key and key in static_translations:
+                    return static_translations[key]
+            
+            # Check static translations directly
+            if text in static_translations:
+                return static_translations[text]
+            
+            # Check with default
+            if default and default in static_translations:
+                return static_translations[default]
+    except Exception:
+        # If anything fails, just return original text (no blocking)
+        pass
     
-    # Try with default as key
-    if default and default in ui_translations:
-        return ui_translations[default]
-    
-    # Check static translations
-    translations = st.session_state.get('translations', {})
-    if text in translations:
-        return translations[text]
-    
-    if default and default in translations:
-        return translations[default]
-    
-    # Last resort: dynamic translation (only if not pre-cached)
-    if backend and 'translation' in backend:
-        try:
-            translated = backend['translation'].translate_dynamic(text, language)
-            if translated and translated != text:
-                return translated
-        except Exception:
-            pass
-    
+    # Fallback: return original text (no dynamic translation to avoid blocking)
     return default or text
 
 async def search_city_async(city_name: str, state: str) -> Optional[Dict]:
@@ -523,10 +481,7 @@ def get_recommendation(payload: Dict) -> Optional[Dict]:
 # Load translations
 st.session_state.translations = load_translations(st.session_state.language)
 
-# Pre-load UI translations if not already loaded (first time or language changed)
-if 'ui_translations' not in st.session_state or len(st.session_state.ui_translations) == 0:
-    if st.session_state.language != 'en':
-        preload_ui_translations(st.session_state.language)
+# No preloading needed - translations accessed directly when needed in t() function
 
 # Load states if not loaded
 if not st.session_state.states:
@@ -574,8 +529,7 @@ with st.sidebar:
     if selected_lang != st.session_state.language:
         st.session_state.language = selected_lang
         st.session_state.translations = load_translations(selected_lang)
-        # Pre-load UI translations using static translations (INSTANT - no API calls!)
-        preload_ui_translations(selected_lang)
+        # No preloading needed - translations accessed directly in t() function
         st.rerun()
     
     st.markdown("---")
