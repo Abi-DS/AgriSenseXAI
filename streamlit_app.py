@@ -216,7 +216,7 @@ def load_translations(language: str) -> Dict:
     return {}
 
 def preload_ui_translations(language: str):
-    """Pre-translate and cache all UI text when language changes - OPTIMIZED with smaller chunks"""
+    """Pre-translate and cache all UI text using STATIC translations (FAST - no API calls)"""
     if language == 'en':
         st.session_state.ui_translations = {}
         return
@@ -224,60 +224,64 @@ def preload_ui_translations(language: str):
     if not backend or 'translation' not in backend:
         return
     
-    # All UI text that needs translation - split into smaller chunks for faster processing
-    ui_texts = [
-        "API Status", "WeatherAPI: Configured", "WeatherAPI: Not set (using fallback)",
-        "OpenWeatherMap: Configured", "OpenWeatherMap: Not set", 
-        "Ambee Soil API: Configured", "Ambee Soil API: Not set (using estimates)",
-        "Language", "Mode", "Simple Mode", "Manual Mode", "About",
-        "AgroXAI", "provides AI-powered crop recommendations with:",
-        "Real-time weather data", "Soil parameter analysis", "LightGBM ML model",
-        "SHAP & LIME explanations", "Multilingual support",
-        "Self-contained app", "No separate backend needed!",
-        "AgroXAI - Crop Recommendation System",
-        "Get intelligent crop recommendations with explainable AI",
-        "Simple Mode - Select Your Location",
-        "Just select your state and city. We'll automatically get weather and soil data!",
-        "No cities found for {}. Check locations.json file.",
-        "Getting location coordinates from WeatherAPI...",
-        "Location Selected", "City", "State", "Coordinates",
-        "Getting recommendations with AI analysis...",
-        "Recommendations", "Model", "Confidence", "Importance",
-        "Key Factors", "Loading location data...",
-        "No states loaded! Please check that backend/data/locations.json exists and contains valid data.",
-        "Manual Mode - Enter Soil Parameters",
-        "Enter your soil parameters manually for precise recommendations",
-        "Soil Parameters", "Location",
-        "Use weather data", "Enable to get location-specific weather data",
-        "Analyzing with AI...",
-        "AgroXAI v1.0", "Powered by LightGBM, SHAP, and LIME", "Built with Streamlit"
-    ]
+    # Get static translations from translation service (already pre-loaded, no API calls!)
+    translation_service = backend['translation']
+    static_translations = translation_service.translations.get(language, {})
     
-    # Translate in smaller chunks (5 strings at a time) to avoid timeouts
+    # Map UI text to static translation keys
+    ui_mapping = {
+        "API Status": "api_status",
+        "Language": "language",
+        "Mode": "mode",
+        "Simple Mode": "simple_mode",
+        "Manual Mode": "manual_mode",
+        "About": "about",
+        "City": "city",
+        "State": "state",
+        "Coordinates": "coordinates",
+        "Recommendations": "recommendations",
+        "Key Factors": "key_factors",
+        "Loading location data...": "loading",
+        "Soil Parameters": "soil_parameters",
+        "Location": "location",
+        "Location Selected": "location_selected",
+        "Get Crop Recommendation": "get_recommendation",
+        "Top Recommended Crops": "top_crops",
+        "Why These Crops?": "explanations",
+    }
+    
+    # Build translation dictionary using static translations (instant!)
     translated_dict = {}
-    chunk_size = 5  # Smaller chunks for faster processing
+    for english_text, translation_key in ui_mapping.items():
+        translated_dict[english_text] = static_translations.get(translation_key, english_text)
     
-    try:
-        for i in range(0, len(ui_texts), chunk_size):
-            chunk = ui_texts[i:i+chunk_size]
-            try:
-                # Use batch translation with timeout handling
-                translated_chunk = backend['translation'].translate_batch(chunk, language, 'en')
-                # Map original to translated
-                for orig, trans in zip(chunk, translated_chunk):
-                    translated_dict[orig] = trans
-            except Exception as chunk_error:
-                # If chunk fails, try individual translations for that chunk
-                for text in chunk:
-                    try:
-                        translated_dict[text] = backend['translation'].translate_dynamic(text, language)
-                    except:
-                        translated_dict[text] = text  # Fallback to original
-        
-        st.session_state.ui_translations = translated_dict
-    except Exception as e:
-        # If everything fails, use empty dict (will translate on demand)
-        st.session_state.ui_translations = {}
+    # For texts not in static translations, use simple word mapping or keep English
+    # (We'll translate these on-demand only if needed, not during preload)
+    additional_texts = {
+        "WeatherAPI: Configured": "WeatherAPI: Configured",  # Keep English for technical terms
+        "WeatherAPI: Not set (using fallback)": "WeatherAPI: Not set (using fallback)",
+        "OpenWeatherMap: Configured": "OpenWeatherMap: Configured",
+        "OpenWeatherMap: Not set": "OpenWeatherMap: Not set",
+        "Ambee Soil API: Configured": "Ambee Soil API: Configured",
+        "Ambee Soil API: Not set (using estimates)": "Ambee Soil API: Not set (using estimates)",
+        "AgroXAI": "AgroXAI",  # Brand name
+        "AgroXAI - Crop Recommendation System": static_translations.get('welcome', 'AgroXAI - Crop Recommendation System'),
+        "Get intelligent crop recommendations with explainable AI": static_translations.get('welcome', 'Get intelligent crop recommendations with explainable AI'),
+        "Simple Mode - Select Your Location": static_translations.get('select_location', 'Simple Mode - Select Your Location'),
+        "Just select your state and city. We'll automatically get weather and soil data!": static_translations.get('simple_mode_description', "Just select your state and city. We'll automatically get weather and soil data!"),
+        "Getting location coordinates from WeatherAPI...": static_translations.get('loading', 'Getting location coordinates from WeatherAPI...'),
+        "Getting recommendations with AI analysis...": static_translations.get('loading', 'Getting recommendations with AI analysis...'),
+        "Manual Mode - Enter Soil Parameters": static_translations.get('manual_mode', 'Manual Mode - Enter Soil Parameters'),
+        "Enter your soil parameters manually for precise recommendations": static_translations.get('submit_to_see', 'Enter your soil parameters manually for precise recommendations'),
+        "Use weather data": static_translations.get('optional', 'Use weather data'),
+        "Analyzing with AI...": static_translations.get('loading', 'Analyzing with AI...'),
+        "Model": "Model",  # Technical term
+        "Confidence": "Confidence",  # Technical term
+        "Importance": "Importance",  # Technical term
+    }
+    
+    translated_dict.update(additional_texts)
+    st.session_state.ui_translations = translated_dict
 
 def t(text: str, default: str = None) -> str:
     """Fast translation helper - uses pre-cached translations"""
@@ -570,19 +574,8 @@ with st.sidebar:
     if selected_lang != st.session_state.language:
         st.session_state.language = selected_lang
         st.session_state.translations = load_translations(selected_lang)
-        # Pre-load all UI translations when language changes (one-time cost)
-        # Use progress bar for better UX
-        progress_bar = st.progress(0, text="Loading translations...")
-        try:
-            preload_ui_translations(selected_lang)
-            progress_bar.progress(100, text="Translations loaded!")
-        except Exception as e:
-            st.error(f"Translation loading failed: {e}")
-            st.session_state.ui_translations = {}
-        finally:
-            import time
-            time.sleep(0.5)  # Brief pause to show completion
-            progress_bar.empty()
+        # Pre-load UI translations using static translations (INSTANT - no API calls!)
+        preload_ui_translations(selected_lang)
         st.rerun()
     
     st.markdown("---")
@@ -959,4 +952,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
-
