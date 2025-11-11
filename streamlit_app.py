@@ -1,997 +1,900 @@
 """
-AgroXAI - Self-Contained Streamlit App
-All backend functionality integrated directly
+Multilingual Support Module - Translation Service
+Implementation Status: ~60% complete
+Technologies: Python, Text-to-Speech, Speech-to-Text
 """
 
-import streamlit as st
-import sys
-import os
+from typing import Dict, List, Optional, Any
+import json
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
-import asyncio
+import logging
 
-# Add backend to path - fix the path setup
-current_dir = Path(__file__).parent
-backend_dir = current_dir / "backend"
-sys.path.insert(0, str(backend_dir))
-
-# Import backend modules with correct path
+# Try to import dynamic translator
 try:
-    from modules.data_acquisition.weather_apis import WeatherDataAcquisition
-    from modules.data_acquisition.soil_data_handler import SoilDataHandler
-    from modules.ml_engine.crop_recommendation_model import CropRecommendationModel
-    from modules.xai_engine.explanation_generator import ExplanationGenerator
-    from modules.multilingual.translation_service import TranslationService
-except ImportError as e:
-    # Try alternative import path
-    sys.path.insert(0, str(current_dir))
-    from backend.modules.data_acquisition.weather_apis import WeatherDataAcquisition
-    from backend.modules.data_acquisition.soil_data_handler import SoilDataHandler
-    from backend.modules.ml_engine.crop_recommendation_model import CropRecommendationModel
-    from backend.modules.xai_engine.explanation_generator import ExplanationGenerator
-    from backend.modules.multilingual.translation_service import TranslationService
+    from deep_translator import GoogleTranslator
+    DYNAMIC_TRANSLATION_AVAILABLE = True
+except ImportError:
+    DYNAMIC_TRANSLATION_AVAILABLE = False
+    logging.warning("deep-translator not available. Install with: pip install deep-translator")
 
-# Load environment variables - prioritize Streamlit secrets, then .env file
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
+from pathlib import Path
 
-# First, try to get from Streamlit secrets (for Streamlit Cloud)
-# Note: This must be done before st.set_page_config() in some cases
-try:
-    if hasattr(st, 'secrets'):
-        # Streamlit Cloud secrets - get and set in environment
-        weatherapi_secret = st.secrets.get('WEATHERAPI_KEY', '')
-        openweather_secret = st.secrets.get('OPENWEATHER_API_KEY', '')
-        ambee_secret = st.secrets.get('AMBEE_API_KEY', '')
-        
-        if weatherapi_secret:
-            os.environ['WEATHERAPI_KEY'] = weatherapi_secret
-        if openweather_secret:
-            os.environ['OPENWEATHER_API_KEY'] = openweather_secret
-        if ambee_secret:
-            os.environ['AMBEE_API_KEY'] = ambee_secret
-except (FileNotFoundError, AttributeError, KeyError, Exception) as e:
-    # Secrets not available (local dev or not configured)
-    pass
-
-# Then try .env file (for local development)
-env_path = current_dir / ".env"
+# Load environment variables
+env_path = Path(__file__).parent.parent.parent / ".env"
 if not env_path.exists():
-    env_path = current_dir / "backend" / ".env"
-if env_path.exists():
-    load_dotenv(dotenv_path=env_path)
-# Also try loading from root
-load_dotenv()
+    env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
-# Page configuration
-st.set_page_config(
-    page_title="AgroXAI - Crop Recommendation System",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+logger = logging.getLogger(__name__)
 
-# Language options
-LANGUAGES = {
-    "en": "English",
-    "hi": "हिंदी (Hindi)",
-    "ta": "தமிழ் (Tamil)",
-    "te": "తెలుగు (Telugu)",
-    "bn": "বাংলা (Bengali)",
-    "ml": "മലയാളം (Malayalam)"
-}
-
-# Initialize session state
-if 'language' not in st.session_state:
-    st.session_state.language = 'en'
-if 'translations' not in st.session_state:
-    st.session_state.translations = {}
-if 'ui_translations' not in st.session_state:
-    st.session_state.ui_translations = {}  # Cached UI translations for fast access
-if 'states' not in st.session_state:
-    st.session_state.states = []
-if 'selected_state' not in st.session_state:
-    st.session_state.selected_state = ''
-if 'selected_city' not in st.session_state:
-    st.session_state.selected_city = ''
-if 'selected_city_data' not in st.session_state:
-    st.session_state.selected_city_data = None
-if 'mode' not in st.session_state:
-    st.session_state.mode = 'simple'
-if 'backend_initialized' not in st.session_state:
-    st.session_state.backend_initialized = False
-
-# Initialize backend components (only once)
-@st.cache_resource
-def initialize_backend():
-    """Initialize all backend components"""
-    try:
-        # Check API keys before initializing - re-read from environment
-        weatherapi_key = os.getenv('WEATHERAPI_KEY', '')
-        openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
-        ambee_key = os.getenv('AMBEE_API_KEY', '')
+class TranslationService:
+    """Handles multilingual support for rural users"""
+    
+    def __init__(self):
+        self.supported_languages = {
+            'en': 'English',
+            'hi': 'Hindi (हिंदी)',
+            'ta': 'Tamil (தமிழ்)',
+            'te': 'Telugu (తెలుగు)',
+            'bn': 'Bengali (বাংলা)',
+            'mr': 'Marathi (मराठी)',
+            'gu': 'Gujarati (ગુજરાતી)',
+            'kn': 'Kannada (ಕನ್ನಡ)',
+            'ml': 'Malayalam (മലയാളം)',
+            'pa': 'Punjabi (ਪੰਜਾਬੀ)'
+        }
         
-        # Log API key status (for debugging in Streamlit Cloud logs)
-        if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
-            print(f"[INFO] WeatherAPI key is set (length: {len(weatherapi_key)})")
-        else:
-            print("[WARNING] WeatherAPI key not found or invalid - will use fallback")
-            if weatherapi_key:
-                print(f"[DEBUG] WEATHERAPI_KEY value: {weatherapi_key[:5]}...")
+        # Language code mapping for dynamic translator
+        self.lang_code_map = {
+            'en': 'en',
+            'hi': 'hi',
+            'ta': 'ta',
+            'te': 'te',
+            'bn': 'bn',
+            'mr': 'mr',
+            'gu': 'gu',
+            'kn': 'kn',
+            'ml': 'ml',
+            'pa': 'pa'
+        }
         
-        if openweather_key and openweather_key != 'demo_key' and len(openweather_key) > 10:
-            print(f"[INFO] OpenWeatherMap key is set (length: {len(openweather_key)})")
-        else:
-            print("[WARNING] OpenWeatherMap key not found - will use fallback")
+        self.translations = self._load_translations()
+        self.use_dynamic_translation = DYNAMIC_TRANSLATION_AVAILABLE
         
-        if ambee_key and len(ambee_key) > 10:
-            print(f"[INFO] Ambee API key is set (length: {len(ambee_key)})")
-        else:
-            print("[INFO] Ambee API key not set - will use location estimates")
-        
-        # Initialize components (they will read from os.getenv)
-        weather_acquisition = WeatherDataAcquisition()
-        soil_handler = SoilDataHandler()
-        ml_model = CropRecommendationModel()
-        translation_service = TranslationService()
-        
-        # Initialize ML model
-        if not ml_model.load_model():
-            with st.spinner("Training ML model (first time only)..."):
-                X_train, y_train = ml_model.generate_synthetic_data(5000)
-                ml_model.train_model(X_train, y_train)
-        
-        # Initialize XAI engine
-        X_train, _ = ml_model.generate_synthetic_data(1000)
-        explanation_generator = ExplanationGenerator(
-            ml_model=ml_model.get_model(),
-            training_data=X_train
-        )
-        
+        # Translation cache to avoid redundant API calls
+        # Format: {(text, target_lang): translated_text}
+        self._translation_cache: Dict[tuple, str] = {}
+    
+    def _load_translations(self) -> Dict[str, Dict[str, str]]:
+        """Load translation data for all supported languages"""
         return {
-            'weather': weather_acquisition,
-            'soil': soil_handler,
-            'ml_model': ml_model,
-            'xai': explanation_generator,
-            'translation': translation_service
-        }
-    except Exception as e:
-        st.error(f"Failed to initialize backend: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return None
-
-# Load backend components
-backend = initialize_backend()
-if backend is None:
-    st.error("Backend initialization failed. Please check the logs.")
-    st.stop()
-
-# Load locations data
-@st.cache_data
-def load_locations():
-    """Load states and cities from data file"""
-    try:
-        data_dir = current_dir / "backend" / "data"
-        locations_file = data_dir / "locations.json"
-        if locations_file.exists():
-            import json
-            with open(locations_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # Group by state
-                states_dict = {}
-                for loc in data:
-                    state = loc.get('state', 'Unknown')
-                    if not state or state == 'Unknown':
-                        continue
-                    if state not in states_dict:
-                        states_dict[state] = {'state': state, 'cities': []}
-                    # Try district first (as in locations.json), then name, then city
-                    city_name = loc.get('district', loc.get('name', loc.get('city', '')))
-                    if city_name and city_name not in states_dict[state]['cities']:
-                        states_dict[state]['cities'].append(city_name)
-                # Sort cities for each state
-                for state_data in states_dict.values():
-                    state_data['cities'].sort()
-                return sorted(list(states_dict.values()), key=lambda x: x['state'])
-        else:
-            st.error(f"Locations file not found at: {locations_file}")
-    except Exception as e:
-        st.error(f"Failed to load locations: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-    return []
-
-def load_translations(language: str) -> Dict:
-    """Load translations from translation service"""
-    try:
-        if language == 'en':
-            return {}
-        # Get translations from translation service
-        all_translations = backend['translation']._get_explanation_translations()
-        translations = all_translations.get(language, {}) if language != 'en' else {}
-        return translations
-    except Exception as e:
-        st.warning(f"Failed to load translations: {e}")
-    return {}
-
-def preload_ui_translations(language: str):
-    """Pre-translate and cache all UI text using STATIC translations (FAST - no API calls)"""
-    # Skip preloading - we'll use static translations directly in t() function
-    # This avoids any potential blocking issues
-    pass
-
-# Translation cache to avoid re-translating same content
-_translation_cache = {}
-
-def t(text: str, default: str = None) -> str:
-    """Fast translation helper - uses static translations + cached dynamic translations"""
-    language = st.session_state.get('language', 'en')
-    if language == 'en':
-        return default or text
-    
-    # Check cache first (for previously translated content)
-    cache_key = f"{language}:{text}"
-    if cache_key in _translation_cache:
-        return _translation_cache[cache_key]
-    
-    # Try to get static translations directly from backend (if available)
-    try:
-        if backend and 'translation' in backend:
-            translation_service = backend['translation']
-            static_translations = translation_service.translations.get(language, {})
-            
-            # Map ALL UI text to static translation keys (comprehensive mapping for instant translation)
-            ui_mapping = {
-                "API Status": "api_status",
-                "Language": "language_label",
-                "Mode": "mode_label",
-                "Simple Mode": "simple_mode",
-                "Manual Mode": "manual_mode",
-                "About": "about",
-                "City": "city",
-                "State": "state",
-                "Coordinates": "coordinates",
-                "Recommendations": "recommendations",
-                "Key Factors": "key_factors",
-                "Loading location data...": "loading_locations",
-                "Soil Parameters": "soil_parameters",
-                "Location": "location",
-                "Location Selected": "location_selected_msg",
-                "Get Crop Recommendation": "get_recommendation",
-                "Top Recommended Crops": "top_crops",
-                "Why These Crops?": "why_these_crops",
-                "AgroXAI - Crop Recommendation System": "agroxai_title",
-                "Get intelligent crop recommendations with explainable AI": "agroxai_subtitle",
-                "Simple Mode - Select Your Location": "simple_mode_title",
-                "Just select your state and city. We'll automatically get weather and soil data!": "simple_mode_description",
-                "Manual Mode - Enter Soil Parameters": "manual_mode_title",
-                "Enter your soil parameters manually for precise recommendations": "manual_mode_description",
-                "Getting location coordinates from WeatherAPI...": "getting_coordinates",
-                "Getting recommendations with AI analysis...": "getting_recommendations",
-                "Analyzing with AI...": "analyzing_ai",
-                "Model": "model",
-                "Confidence": "confidence",
-                "Importance": "importance",
-                "Use weather data": "use_weather_data",
-                "Enable to get location-specific weather data": "enable_weather_help",
-                "AgroXAI": "agroxai_name",
-                "provides AI-powered crop recommendations with:": "provides_features",
-                "Real-time weather data": "realtime_weather",
-                "Soil parameter analysis": "soil_analysis",
-                "LightGBM ML model": "lightgbm_model",
-                "SHAP & LIME explanations": "shap_lime",
-                "Multilingual support": "multilingual",
-                "Self-contained app": "self_contained",
-                "No separate backend needed!": "no_backend",
-                "WeatherAPI: Configured": "weatherapi_configured",
-                "WeatherAPI: Not set (using fallback)": "weatherapi_not_set",
-                "OpenWeatherMap: Configured": "openweather_configured",
-                "OpenWeatherMap: Not set": "openweather_not_set",
-                "Ambee Soil API: Configured": "ambee_configured",
-                "Ambee Soil API: Not set (using estimates)": "ambee_not_set",
-                "Moisture %": "moisture_percent",
-                "[Positive]": "positive",
-                "[Negative]": "negative",
-                "[Neutral]": "neutral",
-                "Unknown": "unknown"
+            'en': {
+                'welcome': 'Welcome to AgriSense XAI',
+                'select_location': 'Select your location',
+                'state': 'State',
+                'district': 'District',
+                'soil_parameters': 'Soil Parameters',
+                'ph_level': 'pH Level',
+                'nitrogen': 'Nitrogen',
+                'phosphorus': 'Phosphorus',
+                'potassium': 'Potassium',
+                'moisture': 'Moisture',
+                'get_recommendation': 'Get Crop Recommendation',
+                'recommendations': 'Crop Recommendations',
+                'explanations': 'Why this crop?',
+                'weather': 'Weather Information',
+                'loading': 'Loading...',
+                'error': 'Error occurred',
+                'rice': 'Rice',
+                'wheat': 'Wheat',
+                'maize': 'Maize',
+                'cotton': 'Cotton',
+                'sugarcane': 'Sugarcane',
+                'banana': 'Banana',
+                'mango': 'Mango',
+                'grapes': 'Grapes',
+                'watermelon': 'Watermelon',
+                'coconut': 'Coconut',
+                'simple_mode': 'Simple Mode',
+                'manual_mode': 'Manual Mode',
+                'select_location': 'Select Your Location',
+                'city': 'City',
+                'select_city': '-- Select City --',
+                'select_state_first': '-- Select State First --',
+                'location_selected': 'Location selected',
+                'coordinates': 'Coordinates',
+                'select_location_error': 'Please select both state and city',
+                'select_and_submit': 'Select your location and click "Get Recommendation" to see crop suggestions.',
+                'top_crops': 'Top Recommended Crops',
+                'key_factors': 'Key Factors',
+                'simple_mode_description': 'Just select your state and city. We\'ll automatically get weather data and provide crop recommendations!',
+                'select_state': '-- Select State --',
+                'optional': 'optional',
+                'location': 'Location',
+                'select_location_warning': 'Please select State and District to get location-specific weather data',
+                'submit_to_see': 'Submit the form to see recommendations.'
+            },
+            'hi': {
+                'welcome': 'अग्रीसेंस एक्सएआई में आपका स्वागत है',
+                'select_location': 'अपना स्थान चुनें',
+                'state': 'राज्य',
+                'district': 'जिला',
+                'soil_parameters': 'मिट्टी के मापदंड',
+                'ph_level': 'पीएच स्तर',
+                'nitrogen': 'नाइट्रोजन',
+                'phosphorus': 'फॉस्फोरस',
+                'potassium': 'पोटैशियम',
+                'moisture': 'नमी',
+                'get_recommendation': 'फसल सुझाव प्राप्त करें',
+                'recommendations': 'फसल सुझाव',
+                'explanations': 'यह फसल क्यों?',
+                'weather': 'मौसम की जानकारी',
+                'loading': 'लोड हो रहा है...',
+                'error': 'त्रुटि हुई',
+                'rice': 'चावल',
+                'wheat': 'गेहूं',
+                'maize': 'मक्का',
+                'cotton': 'कपास',
+                'sugarcane': 'गन्ना',
+                'banana': 'केला',
+                'mango': 'आम',
+                'grapes': 'अंगूर',
+                'watermelon': 'तरबूज',
+                'coconut': 'नारियल',
+                'simple_mode': 'सरल मोड',
+                'manual_mode': 'मैनुअल मोड',
+                'select_location': 'अपना स्थान चुनें',
+                'city': 'शहर',
+                'select_city': '-- शहर चुनें --',
+                'select_state_first': '-- पहले राज्य चुनें --',
+                'location_selected': 'स्थान चुना गया',
+                'coordinates': 'निर्देशांक',
+                'select_location_error': 'कृपया राज्य और शहर दोनों चुनें',
+                'select_and_submit': 'अपना स्थान चुनें और "सुझाव प्राप्त करें" पर क्लिक करें',
+                'top_crops': 'शीर्ष अनुशंसित फसलें',
+                'key_factors': 'मुख्य कारक',
+                'simple_mode_description': 'बस अपना राज्य और शहर चुनें। हम स्वचालित रूप से मौसम डेटा प्राप्त करेंगे और फसल सुझाव देंगे!',
+                'select_state': '-- राज्य चुनें --',
+                'optional': 'वैकल्पिक',
+                'location': 'स्थान',
+                'select_location_warning': 'कृपया स्थान-विशिष्ट मौसम डेटा प्राप्त करने के लिए राज्य और जिला चुनें',
+                'submit_to_see': 'सुझाव देखने के लिए फॉर्म सबमिट करें।'
+            },
+            'ta': {
+                'welcome': 'அக்ரிசென்ஸ் எக்ஸ்ஏஐக்கு வரவேற்கிறோம்',
+                'select_location': 'உங்கள் இடத்தைத் தேர்ந்தெடுக்கவும்',
+                'state': 'மாநிலம்',
+                'district': 'மாவட்டம்',
+                'soil_parameters': 'மண் அளவுருக்கள்',
+                'ph_level': 'pH நிலை',
+                'nitrogen': 'நைட்ரஜன்',
+                'phosphorus': 'பாஸ்பரஸ்',
+                'potassium': 'பொட்டாசியம்',
+                'moisture': 'ஈரப்பதம்',
+                'get_recommendation': 'பயிர் பரிந்துரை பெறவும்',
+                'recommendations': 'பயிர் பரிந்துரைகள்',
+                'explanations': 'இந்த பயிர் ஏன்?',
+                'weather': 'வானிலை தகவல்',
+                'loading': 'ஏற்றுகிறது...',
+                'error': 'பிழை ஏற்பட்டது',
+                'rice': 'அரிசி',
+                'wheat': 'கோதுமை',
+                'maize': 'சோளம்',
+                'cotton': 'பருத்தி',
+                'sugarcane': 'கரும்பு',
+                'banana': 'வாழை',
+                'mango': 'மாம்பழம்',
+                'grapes': 'திராட்சை',
+                'watermelon': 'தர்பூசணி',
+                'coconut': 'தேங்காய்',
+                'simple_mode': 'எளிய முறை',
+                'manual_mode': 'கைமுறை முறை',
+                'select_location': 'உங்கள் இடத்தைத் தேர்ந்தெடுக்கவும்',
+                'city': 'நகரம்',
+                'select_city': '-- நகரத்தைத் தேர்ந்தெடுக்கவும் --',
+                'select_state_first': '-- முதலில் மாநிலத்தைத் தேர்ந்தெடுக்கவும் --',
+                'location_selected': 'இடம் தேர்ந்தெடுக்கப்பட்டது',
+                'coordinates': 'ஆயத்தொலைவுகள்',
+                'select_location_error': 'தயவுசெய்து மாநிலம் மற்றும் நகரம் இரண்டையும் தேர்ந்தெடுக்கவும்',
+                'select_and_submit': 'உங்கள் இடத்தைத் தேர்ந்தெடுத்து "பரிந்துரை பெற" என்பதைக் கிளிக் செய்யவும்',
+                'top_crops': 'முதன்மை பரிந்துரைக்கப்பட்ட பயிர்கள்',
+                'key_factors': 'முக்கிய காரணிகள்',
+                'simple_mode_description': 'உங்கள் மாநிலம் மற்றும் நகரத்தைத் தேர்ந்தெடுக்கவும்। நாங்கள் தானாக வானிலை மற்றும் மண் தரவைப் பெறுவோம்!',
+                'select_state': '-- மாநிலத்தைத் தேர்ந்தெடுக்கவும் --',
+                'optional': 'விருப்பமானது',
+                'location': 'இடம்',
+                'select_location_warning': 'இடம்-குறிப்பிட்ட வானிலை தரவைப் பெற மாநிலம் மற்றும் மாவட்டத்தைத் தேர்ந்தெடுக்கவும்',
+                'submit_to_see': 'பரிந்துரைகளைப் பார்க்க படிவத்தை சமர்ப்பிக்கவும்.'
+            },
+            'te': {
+                'welcome': 'అగ్రిసెన్స్ ఎక్స్ఏఐకు స్వాగతం',
+                'select_location': 'మీ స్థానాన్ని ఎంచుకోండి',
+                'state': 'రాష్ట్రం',
+                'district': 'జిల్లా',
+                'soil_parameters': 'నేల పరామితులు',
+                'ph_level': 'pH స్థాయి',
+                'nitrogen': 'నత్రజని',
+                'phosphorus': 'భాస్వరం',
+                'potassium': 'పొటాషియం',
+                'moisture': 'తేమ',
+                'get_recommendation': 'పంట సిఫారసు పొందండి',
+                'recommendations': 'పంట సిఫారసులు',
+                'explanations': 'ఈ పంట ఎందుకు?',
+                'weather': 'వాతావరణ సమాచారం',
+                'loading': 'లోడ్ అవుతోంది...',
+                'error': 'లోపం సంభవించింది',
+                'rice': 'వరి',
+                'wheat': 'గోధుమ',
+                'maize': 'మొక్కజొన్న',
+                'cotton': 'పత్తి',
+                'sugarcane': 'చెరకు',
+                'banana': 'అరటి',
+                'mango': 'మామిడి',
+                'grapes': 'ద్రాక్ష',
+                'watermelon': 'పుచ్చకాయ',
+                'coconut': 'కొబ్బరి',
+                'simple_mode': 'సాధారణ మోడ్',
+                'manual_mode': 'మాన్యువల్ మోడ్',
+                'select_location': 'మీ స్థానాన్ని ఎంచుకోండి',
+                'city': 'నగరం',
+                'select_city': '-- నగరాన్ని ఎంచుకోండి --',
+                'select_state_first': '-- మొదట రాష్ట్రాన్ని ఎంచుకోండి --',
+                'location_selected': 'స్థానం ఎంచుకోబడింది',
+                'coordinates': 'సమన్వయాలు',
+                'select_location_error': 'దయచేసి రాష్ట్రం మరియు నగరం రెండింటినీ ఎంచుకోండి',
+                'select_and_submit': 'మీ స్థానాన్ని ఎంచుకొని "సిఫారసు పొందండి" క్లిక్ చేయండి',
+                'top_crops': 'టాప్ సిఫారసు చేసిన పంటలు',
+                'key_factors': 'ప్రధాన కారకాలు',
+                'simple_mode_description': 'మీ రాష్ట్రం మరియు నగరాన్ని ఎంచుకోండి. మేము స్వయంచాలకంగా వాతావరణ డేటాను పొంది పంట సిఫారసులను అందిస్తాము!',
+                'select_state': '-- రాష్ట్రాన్ని ఎంచుకోండి --',
+                'optional': 'ఐచ్ఛికం',
+                'location': 'స్థానం',
+                'select_location_warning': 'స్థాన-నిర్దిష్ట వాతావరణ డేటాను పొందడానికి రాష్ట్రం మరియు జిల్లాను ఎంచుకోండి',
+                'submit_to_see': 'సిఫారసులను చూడటానికి ఫారమ్ను సమర్పించండి.'
+            },
+            'bn': {
+                'welcome': 'অগ্রিসেন্স এক্সএআইতে স্বাগতম',
+                'select_location': 'আপনার অবস্থান নির্বাচন করুন',
+                'state': 'রাজ্য',
+                'district': 'জেলা',
+                'soil_parameters': 'মাটির পরামিতি',
+                'ph_level': 'pH স্তর',
+                'nitrogen': 'নাইট্রোজেন',
+                'phosphorus': 'ফসফরাস',
+                'potassium': 'পটাসিয়াম',
+                'moisture': 'আর্দ্রতা',
+                'get_recommendation': 'ফসলের সুপারিশ পান',
+                'recommendations': 'ফসলের সুপারিশ',
+                'explanations': 'এই ফসল কেন?',
+                'weather': 'আবহাওয়ার তথ্য',
+                'loading': 'লোড হচ্ছে...',
+                'error': 'ত্রুটি ঘটেছে',
+                'rice': 'ধান',
+                'wheat': 'গম',
+                'maize': 'ভুট্টা',
+                'cotton': 'তুলা',
+                'sugarcane': 'আখ',
+                'banana': 'কলা',
+                'mango': 'আম',
+                'grapes': 'আঙ্গুর',
+                'watermelon': 'তরমুজ',
+                'coconut': 'নারকেল',
+                'simple_mode': 'সরল মোড',
+                'manual_mode': 'ম্যানুয়াল মোড',
+                'select_location': 'আপনার অবস্থান নির্বাচন করুন',
+                'city': 'শহর',
+                'select_city': '-- শহর নির্বাচন করুন --',
+                'select_state_first': '-- প্রথমে রাজ্য নির্বাচন করুন --',
+                'location_selected': 'অবস্থান নির্বাচিত হয়েছে',
+                'coordinates': 'স্থানাঙ্ক',
+                'select_location_error': 'অনুগ্রহ করে রাজ্য এবং শহর উভয়ই নির্বাচন করুন',
+                'select_and_submit': 'আপনার অবস্থান নির্বাচন করুন এবং "সুপারিশ পান" ক্লিক করুন',
+                'top_crops': 'শীর্ষ সুপারিশকৃত ফসল',
+                'key_factors': 'মূল কারণ',
+                'simple_mode_description': 'শুধু আপনার রাজ্য এবং শহর নির্বাচন করুন। আমরা স্বয়ংক্রিয়ভাবে আবহাওয়ার ডেটা পাব এবং ফসলের সুপারিশ দেব!',
+                'select_state': '-- রাজ্য নির্বাচন করুন --',
+                'optional': 'ঐচ্ছিক',
+                'location': 'অবস্থান',
+                'select_location_warning': 'অবস্থান-নির্দিষ্ট আবহাওয়ার ডেটা পেতে রাজ্য এবং জেলা নির্বাচন করুন',
+                'submit_to_see': 'সুপারিশ দেখতে ফর্ম জমা দিন।'
+            },
+            'ml': {
+                'welcome': 'അഗ്രിസെൻസ് എക്സ്എഐയിലേക്ക് സ്വാഗതം',
+                'select_location': 'നിങ്ങളുടെ സ്ഥാനം തിരഞ്ഞെടുക്കുക',
+                'state': 'സംസ്ഥാനം',
+                'district': 'ജില്ല',
+                'soil_parameters': 'മണ്ണ് പാരാമീറ്ററുകൾ',
+                'ph_level': 'pH നില',
+                'nitrogen': 'നൈട്രജൻ',
+                'phosphorus': 'ഫോസ്ഫറസ്',
+                'potassium': 'പൊട്ടാസ്യം',
+                'moisture': 'ഈർപ്പം',
+                'get_recommendation': 'വിള ശുപാർശ നേടുക',
+                'recommendations': 'വിള ശുപാർശകൾ',
+                'explanations': 'ഈ വിള എന്തുകൊണ്ട്?',
+                'weather': 'കാലാവസ്ഥാ വിവരം',
+                'loading': 'ലോഡ് ചെയ്യുന്നു...',
+                'error': 'പിശക് സംഭവിച്ചു',
+                'rice': 'അരി',
+                'wheat': 'ഗോതമ്പ്',
+                'maize': 'ചോളം',
+                'cotton': 'പരുത്തി',
+                'sugarcane': 'ചെറുകച്ച',
+                'banana': 'വാഴ',
+                'mango': 'മാമ്പഴം',
+                'grapes': 'മുന്തിരി',
+                'watermelon': 'തണ്ണിമത്തൻ',
+                'coconut': 'തെങ്ങ്',
+                'simple_mode': 'ലളിത മോഡ്',
+                'manual_mode': 'മാനുവൽ മോഡ്',
+                'select_location': 'നിങ്ങളുടെ സ്ഥാനം തിരഞ്ഞെടുക്കുക',
+                'city': 'നഗരം',
+                'select_city': '-- നഗരം തിരഞ്ഞെടുക്കുക --',
+                'select_state_first': '-- ആദ്യം സംസ്ഥാനം തിരഞ്ഞെടുക്കുക --',
+                'location_selected': 'സ്ഥാനം തിരഞ്ഞെടുത്തു',
+                'coordinates': 'കോർഡിനേറ്റുകൾ',
+                'select_location_error': 'ദയവായി സംസ്ഥാനവും നഗരവും തിരഞ്ഞെടുക്കുക',
+                'select_and_submit': 'നിങ്ങളുടെ സ്ഥാനം തിരഞ്ഞെടുത്ത് "ശുപാർശ നേടുക" ക്ലിക്ക് ചെയ്യുക',
+                'top_crops': 'മികച്ച ശുപാർശ ചെയ്ത വിളകൾ',
+                'key_factors': 'പ്രധാന ഘടകങ്ങൾ',
+                'simple_mode_description': 'നിങ്ങളുടെ സംസ്ഥാനവും നഗരവും തിരഞ്ഞെടുക്കുക. ഞങ്ങൾ സ്വയം ക്രമീകരിച്ച് കാലാവസ്ഥാ ഡാറ്റ നേടുകയും വിള ശുപാർശകൾ നൽകുകയും ചെയ്യും!',
+                'select_state': '-- സംസ്ഥാനം തിരഞ്ഞെടുക്കുക --',
+                'optional': 'ഓപ്ഷണൽ',
+                'location': 'സ്ഥാനം',
+                'select_location_warning': 'സ്ഥാന-നിർദ്ദിഷ്ട കാലാവസ്ഥാ ഡാറ്റ നേടാൻ സംസ്ഥാനവും ജില്ലയും തിരഞ്ഞെടുക്കുക',
+                'submit_to_see': 'ശുപാർശകൾ കാണാൻ ഫോം സമർപ്പിക്കുക.',
+                'no_factors': 'വിശദമായ ഘടകങ്ങൾ ലഭ്യമല്ല'
             }
-            
-            # Check if text matches a mapping
-            if text in ui_mapping:
-                key = ui_mapping[text]
-                if key and key in static_translations:
-                    result = static_translations[key]
-                    _translation_cache[cache_key] = result  # Cache it
-                    return result
-            
-            # Check static translations directly
-            if text in static_translations:
-                result = static_translations[text]
-                _translation_cache[cache_key] = result
-                return result
-            
-            # Check with default
-            if default and default in static_translations:
-                result = static_translations[default]
-                _translation_cache[cache_key] = result
-                return result
-            
-            # NEVER call API for UI text - only return static translations or original
-            # UI text should already be in static translations
-            # Only dynamic content (explanations, descriptions) should use API, and that's handled elsewhere
-    except Exception:
-        pass
+        }
     
-    # Fallback: return original text
-    result = default or text
-    _translation_cache[cache_key] = result  # Cache even the original
-    return result
-
-async def search_city_async(city_name: str, state: str) -> Optional[Dict]:
-    """Search for city coordinates using WeatherAPI (prioritized) with fallback to static data"""
-    # Try WeatherAPI first (like Next.js frontend does)
-    try:
-        cities = await backend['weather'].search_cities(city_name, country="IN")
-        if cities:
-            # Find exact match for city and state
-            city = next(
-                (c for c in cities 
-                 if c.get('name', '').lower() == city_name.lower() and 
-                    c.get('state', '').lower() == state.lower()),
-                None
-            ) or next(
-                (c for c in cities 
-                 if c.get('name', '').lower() == city_name.lower()),
-                None
-            ) or cities[0]
-            
-            if city and city.get('latitude') and city.get('longitude'):
-                return {
-                    'name': city.get('name', city_name),
-                    'state': city.get('state', state),
-                    'latitude': city.get('latitude', 20.5937),
-                    'longitude': city.get('longitude', 78.9629)
-                }
-    except Exception as e:
-        st.warning(f"WeatherAPI city search failed: {e}")
+    def get_supported_languages(self) -> Dict[str, str]:
+        """Get list of supported languages"""
+        return self.supported_languages
     
-    # Fallback to static locations.json (uses "district" field)
-    try:
-        data_dir = current_dir / "backend" / "data"
-        locations_file = data_dir / "locations.json"
-        if locations_file.exists():
-            import json
-            with open(locations_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                for loc in data:
-                    # Check district, name, or city fields
-                    loc_city = loc.get('district', loc.get('name', loc.get('city', '')))
-                    if loc_city.lower() == city_name.lower():
-                        if loc.get('state', '').lower() == state.lower():
-                            return {
-                                'name': city_name,
-                                'state': state,
-                                'latitude': loc.get('lat', loc.get('latitude', 20.5937)),
-                                'longitude': loc.get('lon', loc.get('longitude', 78.9629))
-                            }
-    except Exception as e:
-        st.warning(f"Static city search failed: {e}")
-    
-    return None
-
-def search_city(city_name: str, state: str) -> Optional[Dict]:
-    """Wrapper to run async city search"""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(search_city_async(city_name, state))
-
-async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
-    """Get crop recommendation using backend modules directly"""
-    try:
-        # Get weather data
-        weather_data = None
-        weather_summary = None
+    def translate_text(self, text: str, target_language: str) -> str:
+        """Translate text to target language"""
+        if target_language not in self.translations:
+            return text
         
-        if payload.get('use_weather', True):
-            lat = payload.get('latitude', 20.5937)
-            lon = payload.get('longitude', 78.9629)
-            weather_data = await backend['weather'].get_weather_data(lat, lon)
-            weather_summary = backend['weather'].get_weather_summary(weather_data)
+        return self.translations[target_language].get(text, text)
+    
+    def translate_crop_name(self, crop_name: str, target_language: str) -> str:
+        """Translate crop name to target language"""
+        if target_language == 'en':
+            return crop_name.capitalize()
+        return self.translate_text(crop_name.lower(), target_language)
+    
+    def translate_feature_name(self, feature_name: str, target_language: str) -> str:
+        """Translate feature name to target language"""
+        if target_language == 'en':
+            return feature_name
         
-        # Get soil parameters
-        soil_params = {
-            'ph': payload.get('ph', 6.5),
-            'nitrogen': payload.get('nitrogen', 40),
-            'phosphorus': payload.get('phosphorus', 30),
-            'potassium': payload.get('potassium', 30),
-            'moisture': payload.get('moisture', 50)
+        feature_translations = {
+            'hi': {
+                'ph': 'पीएच',
+                'nitrogen': 'नाइट्रोजन',
+                'phosphorus': 'फॉस्फोरस',
+                'potassium': 'पोटैशियम',
+                'moisture': 'नमी',
+                'temperature': 'तापमान',
+                'humidity': 'आर्द्रता',
+                'rainfall': 'वर्षा',
+                'organic_matter': 'कार्बनिक पदार्थ'
+            },
+            'ta': {
+                'ph': 'pH',
+                'nitrogen': 'நைட்ரஜன்',
+                'phosphorus': 'பாஸ்பரஸ்',
+                'potassium': 'பொட்டாசியம்',
+                'moisture': 'ஈரப்பதம்',
+                'temperature': 'வெப்பநிலை',
+                'humidity': 'ஈரப்பதம்',
+                'rainfall': 'மழை',
+                'organic_matter': 'கரிமப் பொருள்'
+            },
+            'te': {
+                'ph': 'pH',
+                'nitrogen': 'నత్రజని',
+                'phosphorus': 'భాస్వరం',
+                'potassium': 'పొటాషియం',
+                'moisture': 'తేమ',
+                'temperature': 'ఉష్ణోగ్రత',
+                'humidity': 'తేమ',
+                'rainfall': 'వర్షపాతం',
+                'organic_matter': 'సేంద్రియ పదార్థం'
+            },
+            'bn': {
+                'ph': 'pH',
+                'nitrogen': 'নাইট্রোজেন',
+                'phosphorus': 'ফসফরাস',
+                'potassium': 'পটাসিয়াম',
+                'moisture': 'আর্দ্রতা',
+                'temperature': 'তাপমাত্রা',
+                'humidity': 'আর্দ্রতা',
+                'rainfall': 'বৃষ্টিপাত',
+                'organic_matter': 'জৈব পদার্থ'
+            }
         }
         
-        # Check if using defaults - estimate from location
-        default_values = {'ph': 6.5, 'nitrogen': 40, 'phosphorus': 30, 'potassium': 30, 'moisture': 50}
-        using_defaults = all(
-            abs(soil_params.get(k, 0) - default_values.get(k, 0)) < 0.1 
-            for k in default_values.keys()
-        )
+        return feature_translations.get(target_language, {}).get(feature_name, feature_name)
+    
+    def translate_dynamic(self, text: str, target_language: str, source_language: str = 'en') -> str:
+        """
+        Translate dynamic content using deep-translator (free Google Translate API).
+        PRIORITIZES static translations first, then uses deep-translator.
+        """
+        if target_language == 'en' or not text or not text.strip():
+            return text
         
-        if using_defaults and payload.get('use_weather', True):
-            lat = payload.get('latitude', 20.5937)
-            lon = payload.get('longitude', 78.9629)
-            estimated_soil = await backend['soil'].estimate_soil_from_location(
-                lat, lon,
-                state=payload.get('state', ''),
-                district=payload.get('district', '')
-            )
-            soil_params.update(estimated_soil)
+        # Step 1: Check cache first to avoid redundant API calls
+        cache_key = (text.strip(), target_language)
+        if cache_key in self._translation_cache:
+            logger.debug(f"Cache hit for translation: '{text[:30]}...'")
+            return self._translation_cache[cache_key]
         
-        # Prepare features
-        temperature = weather_data.get('temperature', 25.0) if weather_data else 25.0
-        humidity = weather_data.get('humidity', 65.0) if weather_data else 65.0
-        rainfall = weather_data.get('rainfall', 100.0) if weather_data else 100.0
+        # Step 2: Check static translations FIRST (no API call needed!)
+        try:
+            static_translated = self.translate_explanation(text, target_language)
+            if static_translated and static_translated != text:
+                # Found in static translations - cache and return
+                self._translation_cache[cache_key] = static_translated
+                logger.debug(f"Static translation found for: '{text[:30]}...'")
+                return static_translated
+        except Exception as e:
+            logger.debug(f"Static translation check failed: {e}, proceeding to API")
         
-        features = {
-            'ph': soil_params['ph'],
-            'nitrogen': soil_params['nitrogen'],
-            'phosphorus': soil_params['phosphorus'],
-            'potassium': soil_params['potassium'],
-            'moisture': soil_params['moisture'],
-            'temperature': temperature,
-            'humidity': humidity,
-            'rainfall': rainfall,
-            'organic_matter': soil_params.get('organic_matter', 3.0)
-        }
+        # Step 3: Use deep-translator for dynamic content (not in static translations)
+        if not self.use_dynamic_translation:
+            logger.warning("Dynamic translation not available, using static")
+            return self.translate_explanation(text, target_language)
         
-        # ML prediction
-        crop_predictions = backend['ml_model'].predict_crops(features, top_k=5)
-        
-        # XAI explanations
-        explanations = backend['xai'].generate_explanation(features, crop_predictions)
-        
-        # Convert to response format
-        language = payload.get('language', 'en')
-        
-        top_crops = []
-        for pred in crop_predictions:
-            crop_name = pred['crop']
-            crop_translated = backend['translation'].translate_crop_name(crop_name, language) if language != 'en' else crop_name
-            top_crops.append({
-                'crop': crop_name,
-                'crop_translated': crop_translated,
-                'score': pred['confidence']
-            })
-        
-        explanations_list = []
-        
-        # OPTIMIZED: Collect all text to translate, then batch translate (much faster!)
-        translation_map = {}
-        if language != 'en':
-            texts_to_translate = []
+        try:
+            target_code = self.lang_code_map.get(target_language, target_language)
+            source_code = self.lang_code_map.get(source_language, source_language)
             
-            # Collect all explanation texts and descriptions
-            for exp in explanations:
-                texts_to_translate.append(exp.overall_explanation)
-                for factor in exp.primary_factors[:5]:
-                    if factor.description:
-                        texts_to_translate.append(factor.description)
+            if target_code == source_code:
+                return text
             
-            # Add weather summary
-            if weather_summary:
-                texts_to_translate.append(weather_summary)
+            # Use GoogleTranslator for dynamic translation (deep-translator is Python equivalent of google-translate-api)
+            translator = GoogleTranslator(source=source_code, target=target_code)
             
-            # Batch translate all texts at once (1-2 API calls instead of 20+)
-            if texts_to_translate:
-                try:
-                    translated_texts = backend['translation'].translate_batch(texts_to_translate, language, 'en')
-                    for orig, trans in zip(texts_to_translate, translated_texts):
-                        translation_map[orig] = trans
-                except Exception:
-                    # Fallback: translate individually (still better than before)
-                    for text in texts_to_translate:
+            # Limit text length to avoid timeouts (max 5000 chars per Google Translate limit)
+            text_to_translate = text[:5000] if len(text) > 5000 else text
+            
+            # Translate with timeout handling
+            try:
+                translated = translator.translate(text_to_translate)
+                
+                if translated and translated.strip() and translated != text_to_translate:
+                    # Cache the translation
+                    self._translation_cache[cache_key] = translated
+                    return translated
+                else:
+                    # Translation failed or returned same - return original
+                    return text
+                    
+            except Exception as translate_error:
+                logger.warning(f"Translation API error for '{text[:30]}...': {translate_error}")
+                # Return original text on error (don't try static to avoid recursion)
+                return text
+                
+        except Exception as e:
+            logger.error(f"Dynamic translation error: {e}")
+            # Return original text on error
+            return text
+    
+    def translate_batch(self, texts: List[str], target_language: str, source_language: str = 'en') -> List[str]:
+        """
+        Translate multiple texts in batches - ONLY for dynamic content.
+        PRIORITIZES static translations (no API calls), then Gemini Pro, then deep-translator.
+        OPTIMIZED: Checks cache first, checks static translations, deduplicates, and batches efficiently.
+        """
+        if target_language == 'en' or not texts:
+            return texts
+        
+        # Step 1: Check cache for already translated texts
+        cached_results = {}
+        texts_to_check = []
+        text_indices = []
+        
+        for i, text in enumerate(texts):
+            cache_key = (text.strip(), target_language)
+            if cache_key in self._translation_cache:
+                cached_results[i] = self._translation_cache[cache_key]
+            else:
+                texts_to_check.append(text)
+                text_indices.append(i)
+        
+        # Step 2: Check static translations for uncached texts (NO API CALLS!)
+        static_results = {}
+        texts_to_translate = []
+        
+        for idx, text in zip(text_indices, texts_to_check):
+            try:
+                static_translated = self.translate_explanation(text, target_language)
+                if static_translated and static_translated != text:
+                    # Found in static translations - cache and use
+                    cache_key = (text.strip(), target_language)
+                    self._translation_cache[cache_key] = static_translated
+                    static_results[idx] = static_translated
+                else:
+                    # Not in static - needs dynamic translation
+                    texts_to_translate.append(text)
+            except Exception:
+                # If static check fails, treat as dynamic
+                texts_to_translate.append(text)
+        
+        # If all texts are cached or in static translations, return immediately (no API calls!)
+        if not texts_to_translate:
+            logger.debug(f"All {len(texts)} texts found in cache/static - no API calls needed!")
+            result = []
+            for i in range(len(texts)):
+                if i in cached_results:
+                    result.append(cached_results[i])
+                elif i in static_results:
+                    result.append(static_results[i])
+                else:
+                    result.append(texts[i])
+            return result
+        
+        # Step 3: Deduplicate texts that need dynamic translation (same text = translate once)
+        unique_texts = []
+        text_to_unique_index = {}
+        
+        for text in texts_to_translate:
+            text_stripped = text.strip()
+            if text_stripped not in text_to_unique_index:
+                unique_texts.append(text_stripped)
+                text_to_unique_index[text_stripped] = len(unique_texts) - 1
+        
+        logger.info(f"Translating {len(unique_texts)} unique dynamic texts via deep-translator (from {len(texts_to_translate)} total, {len(texts)} original) - {len(cached_results)} cached, {len(static_results)} static")
+        
+        # Step 3: Batch translate unique texts using deep-translator
+        if not self.use_dynamic_translation:
+            translated_unique = [self.translate_explanation(text, target_language) for text in unique_texts]
+        else:
+            # Use deep-translator for unique texts
+            try:
+                target_code = self.lang_code_map.get(target_language, target_language)
+                source_code = self.lang_code_map.get(source_language, source_language)
+                
+                if target_code == source_code:
+                    translated_unique = unique_texts
+                else:
+                    translator = GoogleTranslator(source=source_code, target=target_code)
+                    # Translate in batches for deep-translator
+                    chunk_size = 10
+                    translated_unique = []
+                    for i in range(0, len(unique_texts), chunk_size):
+                        chunk = unique_texts[i:i+chunk_size]
                         try:
-                            translation_map[text] = backend['translation'].translate_dynamic(text, language)
-                        except:
-                            translation_map[text] = text
+                            sep = " |||SEP||| "
+                            combined = sep.join(chunk)
+                            translated_combined = translator.translate(combined)
+                            chunk_translated = translated_combined.split(sep)
+                            if len(chunk_translated) == len(chunk):
+                                translated_unique.extend(chunk_translated)
+                            else:
+                                # Fallback to individual
+                                for t in chunk:
+                                    try:
+                                        translated_unique.append(translator.translate(t[:5000]))
+                                    except:
+                                        translated_unique.append(t)
+                        except Exception:
+                            # Fallback to individual
+                            for t in chunk:
+                                try:
+                                    translated_unique.append(translator.translate(t[:5000]))
+                                except:
+                                    translated_unique.append(t)
+                    
+                    # Cache translations
+                    for orig, trans in zip(unique_texts, translated_unique):
+                        if trans and trans.strip():
+                            self._translation_cache[(orig, target_language)] = trans.strip()
+            except Exception as e:
+                logger.error(f"Deep-translator batch failed: {e}")
+                translated_unique = unique_texts  # Return original on error
         
-        # Build explanations using translated text from map
-        for exp in explanations:
-            crop_name = exp.crop_name
-            crop_translated = backend['translation'].translate_crop_name(crop_name, language) if language != 'en' else crop_name
-            
-            # Get translated explanation from map
-            explanation_text = exp.overall_explanation
-            if language != 'en' and explanation_text in translation_map:
-                explanation_text = translation_map[explanation_text]
-            
-            attributions = []
-            for factor in exp.primary_factors[:5]:
-                feature = factor.feature_name
-                feature_translated = backend['translation'].translate_feature_name(feature, language) if language != 'en' else feature
-                
-                direction = factor.impact
-                all_translations = backend['translation']._get_explanation_translations()
-                direction_translated = all_translations.get(language, {}).get(direction, direction) if language != 'en' else direction
-                
-                description = factor.description
-                # Get translated description from map
-                description_translated = description
-                if language != 'en' and description and description in translation_map:
-                    description_translated = translation_map[description]
-                
-                attributions.append({
-                    'feature': feature,
-                    'feature_translated': feature_translated,
-                    'direction': direction,
-                    'direction_translated': direction_translated,
-                    'description': description,
-                    'description_translated': description_translated,
-                    'importance': float(factor.importance),
-                    'contribution': float(factor.contribution),
-                    'method': factor.method
-                })
-            
-            explanations_list.append({
-                'crop': crop_name,
-                'crop_translated': crop_translated,
-                'text': explanation_text,
-                'text_translated': explanation_text if language != 'en' else explanation_text,
-                'attributions': attributions
-            })
+        # Step 4: Map unique translations back to all texts (including duplicates)
+        unique_translation_map = dict(zip(unique_texts, translated_unique))
         
-        # Get translated weather summary from map
-        if weather_summary and language != 'en' and weather_summary in translation_map:
-            weather_summary = translation_map[weather_summary]
+        # Build final result: use cached, then static, then unique translations, then original
+        result = []
+        for i, text in enumerate(texts):
+            if i in cached_results:
+                result.append(cached_results[i])
+            elif i in static_results:
+                result.append(static_results[i])
+            else:
+                text_stripped = text.strip()
+                if text_stripped in unique_translation_map:
+                    result.append(unique_translation_map[text_stripped])
+                else:
+                    result.append(text)  # Fallback to original
         
+        return result
+    
+    def translate_object_recursive(self, obj: Any, target_language: str, source_language: str = 'en') -> Any:
+        """
+        OPTIMIZED: Collect all strings first, then batch translate them.
+        This reduces API calls from 20+ to 2-3 calls.
+        """
+        if target_language == 'en':
+            return obj
+        
+        if obj is None:
+            return obj
+        
+        # Collect all strings that need translation with their paths
+        strings_to_translate = []
+        paths = []
+        
+        def collect_strings(o, path=[]):
+            if isinstance(o, str):
+                text = o.strip()
+                # Don't skip if it's a meaningful string (not just numbers or very short codes)
+                if text and not text.replace('.', '').replace('-', '').replace(' ', '').replace('%', '').replace('°', '').isdigit():
+                    # Only skip very short codes (1-2 chars) that are likely language codes, not crop names
+                    # Crop names like "wheat", "rice" should be translated
+                    if not (len(text) <= 2 and text.isalpha() and text.lower() in ['no', 'ok', 'hi', 'ta', 'te', 'bn', 'ml', 'en']):
+                        strings_to_translate.append(text)
+                        paths.append(path)
+            elif isinstance(o, dict):
+                for key, value in o.items():
+                    collect_strings(value, path + [key])
+            elif isinstance(o, list):
+                for i, item in enumerate(o):
+                    collect_strings(item, path + [i])
+        
+        collect_strings(obj)
+        
+        if not strings_to_translate:
+            return obj
+        
+        # Batch translate all strings - split into chunks to avoid timeout
+        logger.info(f"Batch translating {len(strings_to_translate)} strings to {target_language}")
+        
+        # OPTIMIZED: Use larger batches for Gemini (can handle 50+ texts in one call)
+        # For deep-translator, keep smaller chunks
+        if self.use_gemini:
+            # Gemini can handle large batches - translate all at once (1 API call!)
+            chunk_size = 50  # Large batch for Gemini
+        else:
+            chunk_size = 10  # Smaller for deep-translator
+        
+        translated_strings = []
+        for i in range(0, len(strings_to_translate), chunk_size):
+            chunk = strings_to_translate[i:i+chunk_size]
+            logger.debug(f"Translating chunk {i//chunk_size + 1} ({len(chunk)} strings)")
+            chunk_translated = self.translate_batch(chunk, target_language, source_language)
+            translated_strings.extend(chunk_translated)
+        
+        # Create a mapping
+        translation_map = dict(zip(strings_to_translate, translated_strings))
+        
+        # Apply translations back to the object
+        def apply_translations(o, path=[]):
+            if isinstance(o, str):
+                text = o.strip()
+                # Try exact match first
+                if text in translation_map:
+                    return translation_map[text]
+                # Try without leading/trailing whitespace variations
+                if text.strip() in translation_map:
+                    return translation_map[text.strip()]
+                return o
+            elif isinstance(o, dict):
+                return {key: apply_translations(value, path + [key]) for key, value in o.items()}
+            elif isinstance(o, list):
+                return [apply_translations(item, path + [i]) for i, item in enumerate(o)]
+            else:
+                return o
+        
+        return apply_translations(obj)
+    
+    def translate_explanation(self, explanation: str, target_language: str) -> str:
+        """
+        Translate explanation text using ONLY static translations (NO API calls, NO recursion).
+        This is used for UI text, labels, and common phrases.
+        """
+        if target_language == 'en' or not explanation or not explanation.strip():
+            return explanation
+        
+        if target_language not in self.translations:
+            return explanation
+        
+        # Get full explanation translations (static only)
+        explanation_translations = self._get_explanation_translations()
+        lang_translations = explanation_translations.get(target_language, {})
+        
+        # Try to find exact match first
+        if explanation in lang_translations:
+            return lang_translations[explanation]
+        
+        # Start with the original explanation
+        translated = explanation
+        
+        # Translate common patterns (longer patterns first to avoid partial matches)
+        patterns = sorted(lang_translations.items(), key=lambda x: len(x[0]), reverse=True)
+        for pattern, translation in patterns:
+            if pattern.lower() in translated.lower():
+                # Case-insensitive replacement
+                translated = re.sub(re.escape(pattern), translation, translated, flags=re.IGNORECASE)
+        
+        # Translate crop names in the explanation
+        for crop_key in ['rice', 'wheat', 'maize', 'cotton', 'sugarcane', 'banana', 'mango', 'grapes', 'watermelon', 'coconut']:
+            if crop_key in translated.lower():
+                crop_translated = self.translate_crop_name(crop_key, target_language)
+                translated = re.sub(re.escape(crop_key), crop_translated, translated, flags=re.IGNORECASE)
+        
+        # Translate feature names
+        for feature_key in ['ph', 'nitrogen', 'phosphorus', 'potassium', 'moisture', 'temperature', 'humidity', 'rainfall', 'organic_matter']:
+            if feature_key in translated.lower():
+                feature_translated = self.translate_feature_name(feature_key, target_language)
+                translated = re.sub(re.escape(feature_key), feature_translated, translated, flags=re.IGNORECASE)
+        
+        # Translate remaining keywords
+        for key, value in self.translations[target_language].items():
+            if key in translated.lower() and len(key) > 2:  # Only translate meaningful words
+                translated = re.sub(r'\b' + re.escape(key) + r'\b', value, translated, flags=re.IGNORECASE)
+        
+        return translated
+    
+    def _get_explanation_translations(self) -> Dict[str, Dict[str, str]]:
+        """Get full explanation translations for all languages"""
         return {
-            'top_crops': top_crops,
-            'explanations': explanations_list,
-            'model_version': 'modular_v1.0',
-            'weather_summary': weather_summary
-        }
-    except Exception as e:
-        st.error(f"Recommendation failed: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return None
-
-def get_recommendation(payload: Dict) -> Optional[Dict]:
-    """Wrapper to run async function"""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(get_recommendation_async(payload))
-
-# Load translations
-st.session_state.translations = load_translations(st.session_state.language)
-
-# No preloading needed - translations accessed directly when needed in t() function
-
-# Load states if not loaded
-if not st.session_state.states:
-    with st.spinner(t("Loading location data...", "Loading location data...")):
-        loaded_states = load_locations()
-        st.session_state.states = loaded_states
-        if len(loaded_states) == 0:
-            st.error(t("No states loaded! Please check that backend/data/locations.json exists and contains valid data.", "No states loaded! Please check that backend/data/locations.json exists and contains valid data."))
-
-# Sidebar for language and mode selection
-with st.sidebar:
-    st.title("AgroXAI")
-    st.markdown("---")
-    
-    # Show API key status
-    weatherapi_key = os.getenv('WEATHERAPI_KEY', '')
-    openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
-    ambee_key = os.getenv('AMBEE_API_KEY', '')
-    
-    st.markdown(f"### {t('API Status', 'api_status')}")
-    if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
-        st.success(t("WeatherAPI: Configured", "weatherapi_configured"))
-    else:
-        st.warning(t("WeatherAPI: Not set (using fallback)", "weatherapi_not_set"))
-    
-    if openweather_key and openweather_key != 'demo_key' and len(openweather_key) > 10:
-        st.success(t("OpenWeatherMap: Configured", "openweather_configured"))
-    else:
-        st.info(t("OpenWeatherMap: Not set", "openweather_not_set"))
-    
-    if ambee_key and len(ambee_key) > 10:
-        st.success(t("Ambee Soil API: Configured", "ambee_configured"))
-    else:
-        st.info(t("Ambee Soil API: Not set (using estimates)", "ambee_not_set"))
-    
-    st.markdown("---")
-    
-    # Language selector
-    selected_lang = st.selectbox(
-        t("Language", "language_label"),
-        options=list(LANGUAGES.keys()),
-        format_func=lambda x: LANGUAGES[x],
-        index=list(LANGUAGES.keys()).index(st.session_state.language) if st.session_state.language in LANGUAGES else 0
-    )
-    if selected_lang != st.session_state.language:
-        st.session_state.language = selected_lang
-        st.session_state.translations = load_translations(selected_lang)
-        # No preloading needed - translations accessed directly in t() function
-        st.rerun()
-    
-    st.markdown("---")
-    
-    # Mode selector
-    mode = st.radio(
-        t("Mode", "mode_label"),
-        options=["simple", "manual"],
-        format_func=lambda x: t("Simple Mode", "simple_mode") if x == "simple" else t("Manual Mode", "manual_mode"),
-        index=0 if st.session_state.mode == "simple" else 1
-    )
-    st.session_state.mode = mode
-    
-    st.markdown("---")
-    st.markdown(f"### {t('About', 'about')}")
-    st.markdown(f"""
-    **{t('AgroXAI', 'agroxai_name')}** {t('provides AI-powered crop recommendations with:', 'provides_features')}
-    - {t('Real-time weather data', 'realtime_weather')}
-    - {t('Soil parameter analysis', 'soil_analysis')}
-    - {t('LightGBM ML model', 'lightgbm_model')}
-    - {t('SHAP & LIME explanations', 'shap_lime')}
-    - {t('Multilingual support', 'multilingual')}
-    """)
-    
-    st.markdown("---")
-    st.markdown(f"**{t('Self-contained app', 'self_contained')}** - {t('No separate backend needed!', 'no_backend')}")
-
-# Main content
-st.title(t("AgroXAI - Crop Recommendation System", "agroxai_title"))
-st.markdown(t("Get intelligent crop recommendations with explainable AI", "agroxai_subtitle"))
-
-if st.session_state.mode == "simple":
-    # Simple Mode - State/City Selection
-    st.header(t("Simple Mode - Select Your Location", "simple_mode_title"))
-    st.info(t("Just select your state and city. We'll automatically get weather and soil data!", "simple_mode_description"))
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # State selector
-        state_options = [""] + [s['state'] for s in st.session_state.states]
-        previous_state = st.session_state.selected_state
-        selected_state = st.selectbox(
-            st.session_state.translations.get('state', 'State'),
-            options=state_options,
-            index=0 if not st.session_state.selected_state else (state_options.index(st.session_state.selected_state) if st.session_state.selected_state in state_options else 0),
-            key="state_selectbox"
-        )
-        
-        # Reset city if state changed
-        if previous_state != selected_state:
-            st.session_state.selected_city = ''
-            st.session_state.selected_city_data = None
-        
-        st.session_state.selected_state = selected_state
-        
-        # City selector (depends on state)
-        cities = []
-        if selected_state:
-            state_data = next((s for s in st.session_state.states if s['state'] == selected_state), None)
-            if state_data:
-                cities = state_data.get('cities', [])
-        
-        # Debug info (can be removed later)
-        if selected_state and len(cities) == 0:
-            st.warning(t("No cities found for {state}. Check locations.json file.", "no_cities_found").format(state=selected_state))
-        
-        # Calculate index for city selectbox
-        city_index = 0
-        if st.session_state.selected_city and cities and st.session_state.selected_city in cities:
-            city_index = cities.index(st.session_state.selected_city) + 1
-        
-        # City options
-        city_options = [""] + cities if cities else [""]
-        
-        selected_city = st.selectbox(
-            st.session_state.translations.get('city', 'City'),
-            options=city_options,
-            disabled=not selected_state or len(cities) == 0,
-            index=city_index,
-            key="city_selectbox"
-        )
-        st.session_state.selected_city = selected_city
-        
-        # Get city coordinates (using WeatherAPI prioritized)
-        if selected_state and selected_city:
-            if (not st.session_state.selected_city_data or 
-                st.session_state.selected_city_data.get('name') != selected_city):
-                with st.spinner(t("Getting location coordinates from WeatherAPI...", "getting_coordinates")):
-                    city_data = search_city(selected_city, selected_state)
-                    if city_data:
-                        st.session_state.selected_city_data = city_data
-                    else:
-                        # Last resort: use default coordinates
-                        st.session_state.selected_city_data = {
-                            'name': selected_city,
-                            'state': selected_state,
-                            'latitude': 20.5937,
-                            'longitude': 78.9629
-                        }
-    
-    with col2:
-        if st.session_state.selected_city_data:
-            st.success(t("Location Selected", "location_selected_msg"))
-            city_data = st.session_state.selected_city_data
-            st.write(f"**{t('City', 'city')}:** {city_data.get('name', selected_city)}")
-            st.write(f"**{t('State', 'state')}:** {city_data.get('state', selected_state)}")
-            st.write(f"**{t('Coordinates', 'coordinates')}:** {city_data.get('latitude', 0):.4f}, {city_data.get('longitude', 0):.4f}")
-    
-    # Submit button
-    if st.button(
-        st.session_state.translations.get('get_recommendation', 'Get Crop Recommendation'),
-        type="primary",
-        disabled=not (selected_state and selected_city),
-        use_container_width=True
-    ):
-        if st.session_state.selected_city_data:
-            with st.spinner(t("Getting recommendations with AI analysis...", "getting_recommendations")):
-                payload = {
-                    "ph": 6.5,
-                    "nitrogen": 40,
-                    "phosphorus": 30,
-                    "potassium": 30,
-                    "moisture": 50,
-                    "latitude": st.session_state.selected_city_data.get('latitude', 20.5937),
-                    "longitude": st.session_state.selected_city_data.get('longitude', 78.9629),
-                    "use_weather": True,
-                    "language": st.session_state.language,
-                    "state": selected_state
-                }
-                
-                result = get_recommendation(payload)
-                if result:
-                    st.session_state.recommendation_result = result
-                    st.rerun()
-    
-    # Display results
-    if 'recommendation_result' in st.session_state and st.session_state.recommendation_result:
-        result = st.session_state.recommendation_result
-        st.markdown("---")
-        st.header(t("Recommendations", "Recommendations"))
-        
-        # Weather summary (like Next.js frontend)
-        if result.get('weather_summary'):
-            st.info(f"{result['weather_summary']}")
-        
-        # Model version (like Next.js frontend)
-        model_version = result.get('model_version', 'modular_v1.0')
-        st.caption(f"{t('Model', 'model')}: {model_version}")
-        
-        # Top crops
-        st.subheader(t("Top Recommended Crops", "top_crops"))
-        top_crops = result.get('top_crops', [])
-        
-        cols = st.columns(min(len(top_crops), 5))
-        for idx, crop in enumerate(top_crops[:5]):
-            with cols[idx]:
-                crop_name = crop.get('crop_translated') or crop.get('crop', 'Unknown')
-                score = crop.get('score', 0)
-                st.metric(
-                    label=crop_name,
-                    value=f"{score:.1%}",
-                    help=f"{t('Confidence', 'confidence')}: {score:.2%}"
-                )
-        
-        # Explanations
-        st.subheader(t("Why These Crops?", "why_these_crops"))
-        explanations = result.get('explanations', [])
-        
-        for exp in explanations:
-            crop_name = exp.get('crop_translated') or exp.get('crop', 'Unknown')
-            explanation_text = exp.get('text_translated') or exp.get('text', '')
-            
-            with st.expander(f"{crop_name}", expanded=(exp == explanations[0])):
-                st.write(explanation_text)
-                
-                # Attributions
-                attributions = exp.get('attributions', [])
-                if attributions:
-                    st.markdown(f"**{t('Key Factors', 'key_factors')}:**")
-                    for attr in attributions[:5]:
-                        feature = attr.get('feature_translated') or attr.get('feature', '')
-                        direction = attr.get('direction_translated') or attr.get('direction', '')
-                        description = attr.get('description_translated') or attr.get('description', '')
-                        importance = attr.get('importance', 0)
-                        method = attr.get('method', 'rule_based')
-                        
-                        direction_text = "[Positive]" if direction == 'positive' else "[Negative]" if direction == 'negative' else "[Neutral]"
-                        method_badge = f" ({method.upper()})" if method != 'rule_based' else ""
-                        
-                        # Display like Next.js frontend: Feature: Direction — Description
-                        description_text = f" — {description}" if description else ""
-                        st.write(f"{direction_text} **{feature}**: {direction}{description_text}{method_badge}")
-                        
-                        # Normalize importance to 0-1 range for progress bar
-                        normalized_importance = max(0.0, min(1.0, float(importance)))
-                        st.progress(normalized_importance, text=f"{t('Importance', 'importance')}: {importance:.1%}")
-
-else:
-    # Manual Mode - Full Parameter Input
-    st.header(t("Manual Mode - Enter Soil Parameters", "manual_mode_title"))
-    st.info(t("Enter your soil parameters manually for precise recommendations", "manual_mode_description"))
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader(t("Soil Parameters", "soil_parameters"))
-        ph = st.slider(
-            st.session_state.translations.get('ph_level', 'pH Level'),
-            min_value=0.0,
-            max_value=14.0,
-            value=6.5,
-            step=0.1
-        )
-        
-        nitrogen = st.slider(
-            st.session_state.translations.get('nitrogen', 'Nitrogen'),
-            min_value=0.0,
-            max_value=200.0,
-            value=40.0,
-            step=1.0
-        )
-        
-        phosphorus = st.slider(
-            st.session_state.translations.get('phosphorus', 'Phosphorus'),
-            min_value=0.0,
-            max_value=100.0,
-            value=30.0,
-            step=1.0
-        )
-        
-        potassium = st.slider(
-            st.session_state.translations.get('potassium', 'Potassium'),
-            min_value=0.0,
-            max_value=300.0,
-            value=30.0,
-            step=1.0
-        )
-        
-        moisture = st.slider(
-            st.session_state.translations.get('moisture', 'Moisture %'),
-            min_value=0.0,
-            max_value=100.0,
-            value=50.0,
-            step=1.0
-        )
-    
-    with col2:
-        st.subheader(t("Location", "location"))
-        
-        # State selector
-        state_options = [""] + [s['state'] for s in st.session_state.states]
-        manual_state = st.selectbox(
-            t("State", "State"),
-            options=state_options,
-            key="manual_state"
-        )
-        
-        # City selector
-        manual_cities = []
-        if manual_state:
-            state_data = next((s for s in st.session_state.states if s['state'] == manual_state), None)
-            if state_data:
-                manual_cities = state_data.get('cities', [])
-        
-        manual_city = st.selectbox(
-            t("City", "City"),
-            options=[""] + manual_cities,
-            disabled=not manual_state,
-            key="manual_city"
-        )
-        
-        # Get coordinates
-        manual_lat = 20.5937
-        manual_lon = 78.9629
-        
-        if manual_state and manual_city:
-            city_data = search_city(manual_city, manual_state)
-            if city_data:
-                manual_lat = city_data.get('latitude', 20.5937)
-                manual_lon = city_data.get('longitude', 78.9629)
-                st.success(f"{t('Location', 'location')}: {manual_city}, {manual_state}")
-                st.caption(f"{t('Coordinates', 'coordinates')}: {manual_lat:.4f}, {manual_lon:.4f}")
-        
-        use_weather = st.checkbox(
-            t("Use weather data", "use_weather_data"),
-            value=True,
-            help=t("Enable to get location-specific weather data", "enable_weather_help")
-        )
-    
-    # Submit button
-    if st.button(
-        st.session_state.translations.get('get_recommendation', 'Get Crop Recommendation'),
-        type="primary",
-        use_container_width=True
-    ):
-        with st.spinner(t("Analyzing with AI...", "analyzing_ai")):
-            payload = {
-                "ph": ph,
-                "nitrogen": nitrogen,
-                "phosphorus": phosphorus,
-                "potassium": potassium,
-                "moisture": moisture,
-                "latitude": manual_lat,
-                "longitude": manual_lon,
-                "use_weather": use_weather,
-                "language": st.session_state.language,
-                "state": manual_state
+            'hi': {
+                'is highly suitable for your location': 'आपके स्थान के लिए अत्यधिक उपयुक्त है',
+                'is suitable for your location': 'आपके स्थान के लिए उपयुक्त है',
+                'is moderately suitable for your location': 'आपके स्थान के लिए मध्यम रूप से उपयुक्त है',
+                'requires warm, humid conditions with plenty of water': 'भरपूर पानी के साथ गर्म, आर्द्र परिस्थितियों की आवश्यकता है',
+                'grows well in warm climates with moderate rainfall': 'मध्यम वर्षा वाली गर्म जलवायु में अच्छी तरह से बढ़ता है',
+                'prefers cooler temperatures and moderate moisture': 'ठंडे तापमान और मध्यम नमी पसंद करता है',
+                'needs warm weather and well-drained soil': 'गर्म मौसम और अच्छी जल निकासी वाली मिट्टी की आवश्यकता है',
+                'requires tropical climate with high rainfall': 'उच्च वर्षा वाली उष्णकटिबंधीय जलवायु की आवश्यकता है',
+                'is suitable for your conditions': 'आपकी परिस्थितियों के लिए उपयुक्त है',
+                'Your': 'आपका',
+                'level is particularly favorable': 'स्तर विशेष रूप से अनुकूल है',
+                'level may need attention': 'स्तर पर ध्यान देने की आवश्यकता हो सकती है',
+                'ph level': 'पीएच स्तर',
+                'temperature': 'तापमान',
+                'rainfall': 'वर्षा',
+                'moisture': 'नमी',
+                'humidity': 'आर्द्रता',
+                'nitrogen': 'नाइट्रोजन',
+                'phosphorus': 'फॉस्फोरस',
+                'potassium': 'पोटैशियम',
+                'organic matter': 'कार्बनिक पदार्थ',
+                'positive': 'सकारात्मक',
+                'negative': 'नकारात्मक',
+                'neutral': 'तटस्थ'
+            },
+            'ta': {
+                'is highly suitable for your location': 'உங்கள் இடத்திற்கு மிகவும் பொருத்தமானது',
+                'is suitable for your location': 'உங்கள் இடத்திற்கு பொருத்தமானது',
+                'is moderately suitable for your location': 'உங்கள் இடத்திற்கு மிதமாக பொருத்தமானது',
+                'requires warm, humid conditions with plenty of water': 'நிறைய நீருடன் வெப்பமான, ஈரப்பதமான நிலைமைகள் தேவை',
+                'grows well in warm climates with moderate rainfall': 'மிதமான மழையுடன் வெப்பமான காலநிலையில் நன்றாக வளரும்',
+                'prefers cooler temperatures and moderate moisture': 'குளிர்ந்த வெப்பநிலை மற்றும் மிதமான ஈரப்பதத்தை விரும்புகிறது',
+                'needs warm weather and well-drained soil': 'வெப்பமான வானிலை மற்றும் நன்றாக வடிகட்டப்பட்ட மண் தேவை',
+                'requires tropical climate with high rainfall': 'அதிக மழையுடன் வெப்பமண்டல காலநிலை தேவை',
+                'is suitable for your conditions': 'உங்கள் நிலைமைகளுக்கு பொருத்தமானது',
+                'Your': 'உங்கள்',
+                'level is particularly favorable': 'நிலை குறிப்பாக சாதகமானது',
+                'level may need attention': 'நிலைக்கு கவனம் தேவைப்படலாம்',
+                'ph level': 'pH நிலை',
+                'temperature': 'வெப்பநிலை',
+                'rainfall': 'மழை',
+                'moisture': 'ஈரப்பதம்',
+                'humidity': 'ஈரப்பதம்',
+                'nitrogen': 'நைட்ரஜன்',
+                'phosphorus': 'பாஸ்பரஸ்',
+                'potassium': 'பொட்டாசியம்',
+                'organic matter': 'கரிமப் பொருள்',
+                'positive': 'நேர்மறை',
+                'negative': 'எதிர்மறை',
+                'neutral': 'நடுநிலை'
+            },
+            'te': {
+                'is highly suitable for your location': 'మీ స్థానానికి చాలా అనుకూలంగా ఉంది',
+                'is suitable for your location': 'మీ స్థానానికి అనుకూలంగా ఉంది',
+                'is moderately suitable for your location': 'మీ స్థానానికి మధ్యస్థంగా అనుకూలంగా ఉంది',
+                'requires warm, humid conditions with plenty of water': 'సమృద్ధమైన నీటితో వెచ్చని, తేమతో కూడిన పరిస్థితులు అవసరం',
+                'grows well in warm climates with moderate rainfall': 'మధ్యస్థ వర్షపాతంతో వెచ్చని వాతావరణంలో బాగా పెరుగుతుంది',
+                'prefers cooler temperatures and moderate moisture': 'చల్లని ఉష్ణోగ్రతలు మరియు మధ్యస్థ తేమను ఇష్టపడుతుంది',
+                'needs warm weather and well-drained soil': 'వెచ్చని వాతావరణం మరియు బాగా నీరు వెళ్ళే నేల అవసరం',
+                'requires tropical climate with high rainfall': 'అధిక వర్షపాతంతో ఉష్ణమండల వాతావరణం అవసరం',
+                'is suitable for your conditions': 'మీ పరిస్థితులకు అనుకూలంగా ఉంది',
+                'Your': 'మీ',
+                'level is particularly favorable': 'స్థాయి ప్రత్యేకంగా అనుకూలంగా ఉంది',
+                'level may need attention': 'స్థాయికి శ్రద్ధ అవసరం కావచ్చు',
+                'ph level': 'pH స్థాయి',
+                'temperature': 'ఉష్ణోగ్రత',
+                'rainfall': 'వర్షపాతం',
+                'moisture': 'తేమ',
+                'humidity': 'తేమ',
+                'nitrogen': 'నత్రజని',
+                'phosphorus': 'భాస్వరం',
+                'potassium': 'పొటాషియం',
+                'organic matter': 'సేంద్రియ పదార్థం',
+                'positive': 'సానుకూల',
+                'negative': 'ప్రతికూల',
+                'neutral': 'తటస్థ'
+            },
+            'bn': {
+                'is highly suitable for your location': 'আপনার অবস্থানের জন্য অত্যন্ত উপযুক্ত',
+                'is suitable for your location': 'আপনার অবস্থানের জন্য উপযুক্ত',
+                'is moderately suitable for your location': 'আপনার অবস্থানের জন্য মাঝারিভাবে উপযুক্ত',
+                'requires warm, humid conditions with plenty of water': 'প্রচুর জল সহ উষ্ণ, আর্দ্র অবস্থার প্রয়োজন',
+                'grows well in warm climates with moderate rainfall': 'মাঝারি বৃষ্টিপাত সহ উষ্ণ জলবায়ুতে ভালোভাবে বৃদ্ধি পায়',
+                'prefers cooler temperatures and moderate moisture': 'শীতল তাপমাত্রা এবং মাঝারি আর্দ্রতা পছন্দ করে',
+                'needs warm weather and well-drained soil': 'উষ্ণ আবহাওয়া এবং ভালো নিষ্কাশনযুক্ত মাটি প্রয়োজন',
+                'requires tropical climate with high rainfall': 'উচ্চ বৃষ্টিপাত সহ গ্রীষ্মমন্ডলীয় জলবায়ু প্রয়োজন',
+                'is suitable for your conditions': 'আপনার অবস্থার জন্য উপযুক্ত',
+                'Your': 'আপনার',
+                'level is particularly favorable': 'স্তর বিশেষভাবে অনুকূল',
+                'level may need attention': 'স্তরের মনোযোগ প্রয়োজন হতে পারে',
+                'ph level': 'pH স্তর',
+                'temperature': 'তাপমাত্রা',
+                'rainfall': 'বৃষ্টিপাত',
+                'moisture': 'আর্দ্রতা',
+                'humidity': 'আর্দ্রতা',
+                'nitrogen': 'নাইট্রোজেন',
+                'phosphorus': 'ফসফরাস',
+                'potassium': 'পটাসিয়াম',
+                'organic matter': 'জৈব পদার্থ',
+                'positive': 'ইতিবাচক',
+                'negative': 'নেতিবাচক',
+                'neutral': 'নিরপেক্ষ'
             }
-            
-            result = get_recommendation(payload)
-            if result:
-                st.session_state.recommendation_result = result
-                st.rerun()
+        }
     
-    # Display results (same as Simple Mode)
-    if 'recommendation_result' in st.session_state and st.session_state.recommendation_result:
-        result = st.session_state.recommendation_result
-        st.markdown("---")
-        st.header(t("Recommendations", "Recommendations"))
+    def get_voice_commands(self, language: str) -> Dict[str, str]:
+        """Get voice commands for specific language"""
+        voice_commands = {
+            'en': {
+                'start': 'Start AgriSense',
+                'select_location': 'Select location',
+                'get_recommendation': 'Get recommendation',
+                'explain': 'Explain recommendation',
+                'change_language': 'Change language'
+            },
+            'hi': {
+                'start': 'अग्रीसेंस शुरू करें',
+                'select_location': 'स्थान चुनें',
+                'get_recommendation': 'सुझाव प्राप्त करें',
+                'explain': 'सुझाव समझाएं',
+                'change_language': 'भाषा बदलें'
+            },
+            'ta': {
+                'start': 'அக்ரிசென்ஸ் தொடங்கவும்',
+                'select_location': 'இடத்தைத் தேர்ந்தெடுக்கவும்',
+                'get_recommendation': 'பரிந்துரை பெறவும்',
+                'explain': 'பரிந்துரையை விளக்கவும்',
+                'change_language': 'மொழியை மாற்றவும்'
+            }
+        }
         
-        if result.get('weather_summary'):
-            st.info(f"{result['weather_summary']}")
-        
-        # Model version
-        model_version = result.get('model_version', 'modular_v1.0')
-        st.caption(f"{t('Model', 'model')}: {model_version}")
-        
-        st.subheader(t("Top Recommended Crops", "top_crops"))
-        top_crops = result.get('top_crops', [])
-        
-        cols = st.columns(min(len(top_crops), 5))
-        for idx, crop in enumerate(top_crops[:5]):
-            with cols[idx]:
-                crop_name = crop.get('crop_translated') or crop.get('crop', 'Unknown')
-                score = crop.get('score', 0)
-                st.metric(
-                    label=crop_name,
-                    value=f"{score:.1%}",
-                    help=f"{t('Confidence', 'confidence')}: {score:.2%}"
-                )
-        
-        st.subheader(t("Why These Crops?", "why_these_crops"))
-        explanations = result.get('explanations', [])
-        
-        for exp in explanations:
-            crop_name = exp.get('crop_translated') or exp.get('crop', 'Unknown')
-            explanation_text = exp.get('text_translated') or exp.get('text', '')
-            
-            with st.expander(f"{crop_name}", expanded=(exp == explanations[0])):
-                st.write(explanation_text)
-                
-                attributions = exp.get('attributions', [])
-                if attributions:
-                    st.markdown(f"**{t('Key Factors', 'key_factors')}:**")
-                    for attr in attributions[:5]:
-                        feature = attr.get('feature_translated') or attr.get('feature', '')
-                        direction = attr.get('direction_translated') or attr.get('direction', '')
-                        description = attr.get('description_translated') or attr.get('description', '')
-                        importance = attr.get('importance', 0)
-                        method = attr.get('method', 'rule_based')
-                        
-                        direction_text = "[Positive]" if direction == 'positive' else "[Negative]" if direction == 'negative' else "[Neutral]"
-                        method_badge = f" ({method.upper()})" if method != 'rule_based' else ""
-                        
-                        # Display like Next.js frontend: Feature: Direction — Description
-                        description_text = f" — {description}" if description else ""
-                        st.write(f"{direction_text} **{feature}**: {direction}{description_text}{method_badge}")
-                        
-                        # Normalize importance to 0-1 range for progress bar
-                        normalized_importance = max(0.0, min(1.0, float(importance)))
-                        st.progress(normalized_importance, text=f"{t('Importance', 'importance')}: {importance:.1%}")
+        return voice_commands.get(language, voice_commands['en'])
+    
+    def is_voice_supported(self, language: str) -> bool:
+        """Check if voice support is available for language"""
+        return language in ['en', 'hi', 'ta', 'te', 'bn']
+    
+    def get_tts_voice_id(self, language: str) -> str:
+        """Get Text-to-Speech voice ID for language"""
+        voice_mapping = {
+            'en': 'en-US-Standard-A',
+            'hi': 'hi-IN-Wavenet-A',
+            'ta': 'ta-IN-Standard-A',
+            'te': 'te-IN-Standard-A',
+            'bn': 'bn-IN-Standard-A'
+        }
+        return voice_mapping.get(language, 'en-US-Standard-A')
 
-# Footer
-st.markdown("---")
-st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
 
