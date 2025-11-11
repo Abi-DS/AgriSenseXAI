@@ -43,7 +43,6 @@ try:
         weatherapi_secret = st.secrets.get('WEATHERAPI_KEY', '')
         openweather_secret = st.secrets.get('OPENWEATHER_API_KEY', '')
         ambee_secret = st.secrets.get('AMBEE_API_KEY', '')
-        gemini_secret = st.secrets.get('GEMINI_API_KEY', '')
         
         if weatherapi_secret:
             os.environ['WEATHERAPI_KEY'] = weatherapi_secret
