@@ -4,11 +4,13 @@ All backend functionality integrated directly
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import sys
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
 import asyncio
+import json
 
 # Add backend to path - fix the path setup
 current_dir = Path(__file__).parent
@@ -71,23 +73,46 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Add global TTS script (only once)
-st.markdown("""
-<script>
-function speakText(text, lang) {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = lang === 'hi' ? 'hi-IN' : lang === 'ta' ? 'ta-IN' : lang === 'te' ? 'te-IN' : lang === 'bn' ? 'bn-IN' : lang === 'ml' ? 'ml-IN' : 'en-US';
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        window.speechSynthesis.speak(utterance);
-    } else {
-        alert('Text-to-speech not supported in your browser');
-    }
-}
-</script>
-""", unsafe_allow_html=True)
+# TTS helper function - embed script with each button (components.html creates separate iframes)
+def create_tts_button(text: str, lang_code: str, button_id: str = None) -> str:
+    """Create HTML for TTS button with embedded script"""
+    if button_id is None:
+        button_id = f"tts_{hash(text) % 100000}"
+    text_json = json.dumps(text)
+    return f"""
+    <div>
+        <script>
+        function speakText_{button_id}(text, lang) {{
+            try {{
+                if ('speechSynthesis' in window) {{
+                    window.speechSynthesis.cancel();
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = lang === 'hi' ? 'hi-IN' : lang === 'ta' ? 'ta-IN' : lang === 'te' ? 'te-IN' : lang === 'bn' ? 'bn-IN' : lang === 'ml' ? 'ml-IN' : 'en-US';
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1;
+                    utterance.volume = 1.0;
+                    window.speechSynthesis.speak(utterance);
+                    return true;
+                }} else {{
+                    alert('Text-to-speech not supported in your browser');
+                    return false;
+                }}
+            }} catch (e) {{
+                console.error('TTS Error:', e);
+                alert('Error: ' + e.message);
+                return false;
+            }}
+        }}
+        </script>
+        <button id="{button_id}" onclick="speakText_{button_id}({text_json}, '{lang_code}'); this.style.opacity='0.6'; setTimeout(() => this.style.opacity='1', 100);" 
+                style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px; transition: opacity 0.2s;" 
+                title="Listen"
+                onmouseover="this.style.background='#0a6'"
+                onmouseout="this.style.background='#0b7'">
+            🔊
+        </button>
+    </div>
+    """
 
 # Language options
 LANGUAGES = {
@@ -856,14 +881,8 @@ if st.session_state.mode == "simple":
             with col2:
                 language = st.session_state.get('language', 'en')
                 lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                weather_escaped = weather_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
-                st.markdown(f"""
-                <button onclick="speakText('{weather_escaped}', '{lang_code}')" 
-                        style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
-                        title="{t('Listen', 'listen')}">
-                    🔊
-                </button>
-                """, unsafe_allow_html=True)
+                button_html = create_tts_button(weather_text, lang_code, f"tts_weather_{hash(weather_text) % 100000}")
+                components.html(button_html, height=40)
         
         # Model version (like Next.js frontend)
         model_version = result.get('model_version', 'modular_v1.0')
@@ -900,14 +919,8 @@ if st.session_state.mode == "simple":
                 with col2:
                     language = st.session_state.get('language', 'en')
                     lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                    explanation_escaped = explanation_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
-                    st.markdown(f"""
-                    <button onclick="speakText('{explanation_escaped}', '{lang_code}')" 
-                            style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
-                            title="{t('Listen', 'listen')}">
-                        🔊
-                    </button>
-                    """, unsafe_allow_html=True)
+                    button_html = create_tts_button(explanation_text, lang_code, f"tts_exp_{hash(explanation_text) % 100000}")
+                    components.html(button_html, height=40)
                 
                 # Attributions
                 attributions = exp.get('attributions', [])
@@ -1113,14 +1126,8 @@ else:
             with col2:
                 language = st.session_state.get('language', 'en')
                 lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                weather_escaped = weather_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
-                st.markdown(f"""
-                <button onclick="speakText('{weather_escaped}', '{lang_code}')" 
-                        style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
-                        title="{t('Listen', 'listen')}">
-                    🔊
-                </button>
-                """, unsafe_allow_html=True)
+                button_html = create_tts_button(weather_text, lang_code, f"tts_weather_manual_{hash(weather_text) % 100000}")
+                components.html(button_html, height=40)
         
         # Model version
         model_version = result.get('model_version', 'modular_v1.0')
@@ -1155,14 +1162,8 @@ else:
                 with col2:
                     language = st.session_state.get('language', 'en')
                     lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                    explanation_escaped = explanation_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
-                    st.markdown(f"""
-                    <button onclick="speakText('{explanation_escaped}', '{lang_code}')" 
-                            style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px;" 
-                            title="{t('Listen', 'listen')}">
-                        🔊
-                    </button>
-                    """, unsafe_allow_html=True)
+                    button_html = create_tts_button(explanation_text, lang_code, f"tts_exp_manual_{hash(explanation_text) % 100000}")
+                    components.html(button_html, height=40)
                 
                 attributions = exp.get('attributions', [])
                 if attributions:
@@ -1188,4 +1189,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
-
