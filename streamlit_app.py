@@ -216,7 +216,7 @@ def load_translations(language: str) -> Dict:
     return {}
 
 def preload_ui_translations(language: str):
-    """Pre-translate and cache all UI text when language changes - called once per language change"""
+    """Pre-translate and cache all UI text when language changes - OPTIMIZED with smaller chunks"""
     if language == 'en':
         st.session_state.ui_translations = {}
         return
@@ -224,7 +224,7 @@ def preload_ui_translations(language: str):
     if not backend or 'translation' not in backend:
         return
     
-    # All UI text that needs translation
+    # All UI text that needs translation - split into smaller chunks for faster processing
     ui_texts = [
         "API Status", "WeatherAPI: Configured", "WeatherAPI: Not set (using fallback)",
         "OpenWeatherMap: Configured", "OpenWeatherMap: Not set", 
@@ -253,13 +253,30 @@ def preload_ui_translations(language: str):
         "AgroXAI v1.0", "Powered by LightGBM, SHAP, and LIME", "Built with Streamlit"
     ]
     
-    # Batch translate all UI texts at once
+    # Translate in smaller chunks (5 strings at a time) to avoid timeouts
+    translated_dict = {}
+    chunk_size = 5  # Smaller chunks for faster processing
+    
     try:
-        translated_texts = backend['translation'].translate_batch(ui_texts, language, 'en')
-        # Create a dictionary mapping original to translated
-        st.session_state.ui_translations = dict(zip(ui_texts, translated_texts))
+        for i in range(0, len(ui_texts), chunk_size):
+            chunk = ui_texts[i:i+chunk_size]
+            try:
+                # Use batch translation with timeout handling
+                translated_chunk = backend['translation'].translate_batch(chunk, language, 'en')
+                # Map original to translated
+                for orig, trans in zip(chunk, translated_chunk):
+                    translated_dict[orig] = trans
+            except Exception as chunk_error:
+                # If chunk fails, try individual translations for that chunk
+                for text in chunk:
+                    try:
+                        translated_dict[text] = backend['translation'].translate_dynamic(text, language)
+                    except:
+                        translated_dict[text] = text  # Fallback to original
+        
+        st.session_state.ui_translations = translated_dict
     except Exception as e:
-        # If batch translation fails, fall back to empty dict (will use dynamic on demand)
+        # If everything fails, use empty dict (will translate on demand)
         st.session_state.ui_translations = {}
 
 def t(text: str, default: str = None) -> str:
@@ -554,8 +571,18 @@ with st.sidebar:
         st.session_state.language = selected_lang
         st.session_state.translations = load_translations(selected_lang)
         # Pre-load all UI translations when language changes (one-time cost)
-        with st.spinner("Loading translations..."):
+        # Use progress bar for better UX
+        progress_bar = st.progress(0, text="Loading translations...")
+        try:
             preload_ui_translations(selected_lang)
+            progress_bar.progress(100, text="Translations loaded!")
+        except Exception as e:
+            st.error(f"Translation loading failed: {e}")
+            st.session_state.ui_translations = {}
+        finally:
+            import time
+            time.sleep(0.5)  # Brief pause to show completion
+            progress_bar.empty()
         st.rerun()
     
     st.markdown("---")
@@ -932,3 +959,4 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
+
