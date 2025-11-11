@@ -115,7 +115,11 @@ class TranslationService:
                 'optional': 'optional',
                 'location': 'Location',
                 'select_location_warning': 'Please select State and District to get location-specific weather data',
-                'submit_to_see': 'Submit the form to see recommendations.'
+                'submit_to_see': 'Submit the form to see recommendations.',
+                'api_status': 'API Status',
+                'language': 'Language',
+                'mode': 'Mode',
+                'about': 'About'
             },
             'hi': {
                 'welcome': 'अग्रीसेंस एक्सएआई में आपका स्वागत है',
@@ -161,7 +165,11 @@ class TranslationService:
                 'optional': 'वैकल्पिक',
                 'location': 'स्थान',
                 'select_location_warning': 'कृपया स्थान-विशिष्ट मौसम डेटा प्राप्त करने के लिए राज्य और जिला चुनें',
-                'submit_to_see': 'सुझाव देखने के लिए फॉर्म सबमिट करें।'
+                'submit_to_see': 'सुझाव देखने के लिए फॉर्म सबमिट करें।',
+                'api_status': 'API स्थिति',
+                'language': 'भाषा',
+                'mode': 'मोड',
+                'about': 'के बारे में'
             },
             'ta': {
                 'welcome': 'அக்ரிசென்ஸ் எக்ஸ்ஏஐக்கு வரவேற்கிறோம்',
@@ -207,7 +215,11 @@ class TranslationService:
                 'optional': 'விருப்பமானது',
                 'location': 'இடம்',
                 'select_location_warning': 'இடம்-குறிப்பிட்ட வானிலை தரவைப் பெற மாநிலம் மற்றும் மாவட்டத்தைத் தேர்ந்தெடுக்கவும்',
-                'submit_to_see': 'பரிந்துரைகளைப் பார்க்க படிவத்தை சமர்ப்பிக்கவும்.'
+                'submit_to_see': 'பரிந்துரைகளைப் பார்க்க படிவத்தை சமர்ப்பிக்கவும்.',
+                'api_status': 'API நிலை',
+                'language': 'மொழி',
+                'mode': 'முறை',
+                'about': 'பற்றி'
             },
             'te': {
                 'welcome': 'అగ్రిసెన్స్ ఎక్స్ఏఐకు స్వాగతం',
@@ -253,7 +265,11 @@ class TranslationService:
                 'optional': 'ఐచ్ఛికం',
                 'location': 'స్థానం',
                 'select_location_warning': 'స్థాన-నిర్దిష్ట వాతావరణ డేటాను పొందడానికి రాష్ట్రం మరియు జిల్లాను ఎంచుకోండి',
-                'submit_to_see': 'సిఫారసులను చూడటానికి ఫారమ్ను సమర్పించండి.'
+                'submit_to_see': 'సిఫారసులను చూడటానికి ఫారమ్ను సమర్పించండి.',
+                'api_status': 'API స్థితి',
+                'language': 'భాష',
+                'mode': 'మోడ్',
+                'about': 'గురించి'
             },
             'bn': {
                 'welcome': 'অগ্রিসেন্স এক্সএআইতে স্বাগতম',
@@ -299,7 +315,11 @@ class TranslationService:
                 'optional': 'ঐচ্ছিক',
                 'location': 'অবস্থান',
                 'select_location_warning': 'অবস্থান-নির্দিষ্ট আবহাওয়ার ডেটা পেতে রাজ্য এবং জেলা নির্বাচন করুন',
-                'submit_to_see': 'সুপারিশ দেখতে ফর্ম জমা দিন।'
+                'submit_to_see': 'সুপারিশ দেখতে ফর্ম জমা দিন।',
+                'api_status': 'API অবস্থা',
+                'language': 'ভাষা',
+                'mode': 'মোড',
+                'about': 'সম্পর্কে'
             },
             'ml': {
                 'welcome': 'അഗ്രിസെൻസ് എക്സ്എഐയിലേക്ക് സ്വാഗതം',
@@ -346,7 +366,11 @@ class TranslationService:
                 'location': 'സ്ഥാനം',
                 'select_location_warning': 'സ്ഥാന-നിർദ്ദിഷ്ട കാലാവസ്ഥാ ഡാറ്റ നേടാൻ സംസ്ഥാനവും ജില്ലയും തിരഞ്ഞെടുക്കുക',
                 'submit_to_see': 'ശുപാർശകൾ കാണാൻ ഫോം സമർപ്പിക്കുക.',
-                'no_factors': 'വിശദമായ ഘടകങ്ങൾ ലഭ്യമല്ല'
+                'no_factors': 'വിശദമായ ഘടകങ്ങൾ ലഭ്യമല്ല',
+                'api_status': 'API സ്ഥിതി',
+                'language': 'ഭാഷ',
+                'mode': 'മോഡ്',
+                'about': 'കുറിച്ച്'
             }
         }
     
