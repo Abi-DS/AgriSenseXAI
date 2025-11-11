@@ -424,7 +424,7 @@ class TranslationService:
     def translate_dynamic(self, text: str, target_language: str, source_language: str = 'en') -> str:
         """
         Translate dynamic content using deep-translator (free Google Translate API).
-        PRIORITIZES static translations first, then uses deep-translator.
+        Translates ENTIRE sentences as complete text (not word-by-word).
         """
         if target_language == 'en' or not text or not text.strip():
             return text
@@ -435,21 +435,11 @@ class TranslationService:
             logger.debug(f"Cache hit for translation: '{text[:30]}...'")
             return self._translation_cache[cache_key]
         
-        # Step 2: Check static translations FIRST (no API call needed!)
-        try:
-            static_translated = self.translate_explanation(text, target_language)
-            if static_translated and static_translated != text:
-                # Found in static translations - cache and return
-                self._translation_cache[cache_key] = static_translated
-                logger.debug(f"Static translation found for: '{text[:30]}...'")
-                return static_translated
-        except Exception as e:
-            logger.debug(f"Static translation check failed: {e}, proceeding to API")
-        
-        # Step 3: Use deep-translator for dynamic content (not in static translations)
+        # Step 2: For dynamic content, translate ENTIRE text via API (not partial word replacement)
+        # Skip static translation check to avoid partial translations
         if not self.use_dynamic_translation:
-            logger.warning("Dynamic translation not available, using static")
-            return self.translate_explanation(text, target_language)
+            logger.warning("Dynamic translation not available")
+            return text
         
         try:
             target_code = self.lang_code_map.get(target_language, target_language)
@@ -508,34 +498,17 @@ class TranslationService:
                 texts_to_check.append(text)
                 text_indices.append(i)
         
-        # Step 2: Check static translations for uncached texts (NO API CALLS!)
-        static_results = {}
-        texts_to_translate = []
+        # Step 2: For dynamic content, translate ENTIRE texts via API (not partial word replacement)
+        # Skip static translation check to ensure complete sentence translation
+        texts_to_translate = texts_to_check
         
-        for idx, text in zip(text_indices, texts_to_check):
-            try:
-                static_translated = self.translate_explanation(text, target_language)
-                if static_translated and static_translated != text:
-                    # Found in static translations - cache and use
-                    cache_key = (text.strip(), target_language)
-                    self._translation_cache[cache_key] = static_translated
-                    static_results[idx] = static_translated
-                else:
-                    # Not in static - needs dynamic translation
-                    texts_to_translate.append(text)
-            except Exception:
-                # If static check fails, treat as dynamic
-                texts_to_translate.append(text)
-        
-        # If all texts are cached or in static translations, return immediately (no API calls!)
+        # If all texts are cached, return immediately (no API calls!)
         if not texts_to_translate:
-            logger.debug(f"All {len(texts)} texts found in cache/static - no API calls needed!")
+            logger.debug(f"All {len(texts)} texts found in cache - no API calls needed!")
             result = []
             for i in range(len(texts)):
                 if i in cached_results:
                     result.append(cached_results[i])
-                elif i in static_results:
-                    result.append(static_results[i])
                 else:
                     result.append(texts[i])
             return result
@@ -550,11 +523,12 @@ class TranslationService:
                 unique_texts.append(text_stripped)
                 text_to_unique_index[text_stripped] = len(unique_texts) - 1
         
-        logger.info(f"Translating {len(unique_texts)} unique dynamic texts via deep-translator (from {len(texts_to_translate)} total, {len(texts)} original) - {len(cached_results)} cached, {len(static_results)} static")
+        logger.info(f"Translating {len(unique_texts)} unique dynamic texts via deep-translator (from {len(texts_to_translate)} total, {len(texts)} original) - {len(cached_results)} cached")
         
-        # Step 3: Batch translate unique texts using deep-translator
+        # Step 3: Batch translate unique texts using deep-translator (complete sentence translation)
         if not self.use_dynamic_translation:
-            translated_unique = [self.translate_explanation(text, target_language) for text in unique_texts]
+            # If no dynamic translation available, return original texts
+            translated_unique = unique_texts
         else:
             # Use deep-translator for unique texts
             try:
@@ -603,13 +577,11 @@ class TranslationService:
         # Step 4: Map unique translations back to all texts (including duplicates)
         unique_translation_map = dict(zip(unique_texts, translated_unique))
         
-        # Build final result: use cached, then static, then unique translations, then original
+        # Build final result: use cached, then unique translations, then original
         result = []
         for i, text in enumerate(texts):
             if i in cached_results:
                 result.append(cached_results[i])
-            elif i in static_results:
-                result.append(static_results[i])
             else:
                 text_stripped = text.strip()
                 if text_stripped in unique_translation_map:
