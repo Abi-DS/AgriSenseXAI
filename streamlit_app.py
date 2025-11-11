@@ -86,6 +86,8 @@ if 'language' not in st.session_state:
     st.session_state.language = 'en'
 if 'translations' not in st.session_state:
     st.session_state.translations = {}
+if 'ui_translations' not in st.session_state:
+    st.session_state.ui_translations = {}  # Cached UI translations for fast access
 if 'states' not in st.session_state:
     st.session_state.states = []
 if 'selected_state' not in st.session_state:
@@ -213,31 +215,84 @@ def load_translations(language: str) -> Dict:
         st.warning(f"Failed to load translations: {e}")
     return {}
 
-def t(text: str, default: str = None) -> str:
-    """Translation helper - translates text dynamically if not in static translations"""
-    if not backend or 'translation' not in backend:
-        return default or text
+def preload_ui_translations(language: str):
+    """Pre-translate and cache all UI text when language changes - called once per language change"""
+    if language == 'en':
+        st.session_state.ui_translations = {}
+        return
     
+    if not backend or 'translation' not in backend:
+        return
+    
+    # All UI text that needs translation
+    ui_texts = [
+        "API Status", "WeatherAPI: Configured", "WeatherAPI: Not set (using fallback)",
+        "OpenWeatherMap: Configured", "OpenWeatherMap: Not set", 
+        "Ambee Soil API: Configured", "Ambee Soil API: Not set (using estimates)",
+        "Language", "Mode", "Simple Mode", "Manual Mode", "About",
+        "AgroXAI", "provides AI-powered crop recommendations with:",
+        "Real-time weather data", "Soil parameter analysis", "LightGBM ML model",
+        "SHAP & LIME explanations", "Multilingual support",
+        "Self-contained app", "No separate backend needed!",
+        "AgroXAI - Crop Recommendation System",
+        "Get intelligent crop recommendations with explainable AI",
+        "Simple Mode - Select Your Location",
+        "Just select your state and city. We'll automatically get weather and soil data!",
+        "No cities found for {}. Check locations.json file.",
+        "Getting location coordinates from WeatherAPI...",
+        "Location Selected", "City", "State", "Coordinates",
+        "Getting recommendations with AI analysis...",
+        "Recommendations", "Model", "Confidence", "Importance",
+        "Key Factors", "Loading location data...",
+        "No states loaded! Please check that backend/data/locations.json exists and contains valid data.",
+        "Manual Mode - Enter Soil Parameters",
+        "Enter your soil parameters manually for precise recommendations",
+        "Soil Parameters", "Location",
+        "Use weather data", "Enable to get location-specific weather data",
+        "Analyzing with AI...",
+        "AgroXAI v1.0", "Powered by LightGBM, SHAP, and LIME", "Built with Streamlit"
+    ]
+    
+    # Batch translate all UI texts at once
+    try:
+        translated_texts = backend['translation'].translate_batch(ui_texts, language, 'en')
+        # Create a dictionary mapping original to translated
+        st.session_state.ui_translations = dict(zip(ui_texts, translated_texts))
+    except Exception as e:
+        # If batch translation fails, fall back to empty dict (will use dynamic on demand)
+        st.session_state.ui_translations = {}
+
+def t(text: str, default: str = None) -> str:
+    """Fast translation helper - uses pre-cached translations"""
     language = st.session_state.get('language', 'en')
     if language == 'en':
         return default or text
     
-    # First try static translations
+    # First check cached UI translations (fastest)
+    ui_translations = st.session_state.get('ui_translations', {})
+    if text in ui_translations:
+        return ui_translations[text]
+    
+    # Try with default as key
+    if default and default in ui_translations:
+        return ui_translations[default]
+    
+    # Check static translations
     translations = st.session_state.get('translations', {})
     if text in translations:
         return translations[text]
     
-    # Try with default as key
     if default and default in translations:
         return translations[default]
     
-    # Use dynamic translation
-    try:
-        translated = backend['translation'].translate_dynamic(text, language)
-        if translated and translated != text:
-            return translated
-    except Exception as e:
-        pass
+    # Last resort: dynamic translation (only if not pre-cached)
+    if backend and 'translation' in backend:
+        try:
+            translated = backend['translation'].translate_dynamic(text, language)
+            if translated and translated != text:
+                return translated
+        except Exception:
+            pass
     
     return default or text
 
@@ -447,6 +502,11 @@ def get_recommendation(payload: Dict) -> Optional[Dict]:
 # Load translations
 st.session_state.translations = load_translations(st.session_state.language)
 
+# Pre-load UI translations if not already loaded (first time or language changed)
+if 'ui_translations' not in st.session_state or len(st.session_state.ui_translations) == 0:
+    if st.session_state.language != 'en':
+        preload_ui_translations(st.session_state.language)
+
 # Load states if not loaded
 if not st.session_state.states:
     with st.spinner(t("Loading location data...", "Loading location data...")):
@@ -493,6 +553,9 @@ with st.sidebar:
     if selected_lang != st.session_state.language:
         st.session_state.language = selected_lang
         st.session_state.translations = load_translations(selected_lang)
+        # Pre-load all UI translations when language changes (one-time cost)
+        with st.spinner("Loading translations..."):
+            preload_ui_translations(selected_lang)
         st.rerun()
     
     st.markdown("---")
