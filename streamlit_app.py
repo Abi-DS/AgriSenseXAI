@@ -632,7 +632,7 @@ with st.sidebar:
     st.session_state.mode = mode
     
     st.markdown("---")
-        st.markdown(f"### {t('About', 'about')}")
+    st.markdown(f"### {t('About', 'about')}")
     st.markdown(f"""
     **{t('AgroXAI', 'agroxai_name')}** {t('provides AI-powered crop recommendations with:', 'provides_features')}
     - {t('Real-time weather data', 'realtime_weather')}
@@ -994,3 +994,4 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
+
