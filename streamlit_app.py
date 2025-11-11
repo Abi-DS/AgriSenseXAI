@@ -299,16 +299,9 @@ def t(text: str, default: str = None) -> str:
                 _translation_cache[cache_key] = result
                 return result
             
-            # For dynamic content, use dynamic translation (but cache it)
-            # Only translate if it's meaningful text (not too short, not technical terms)
-            if len(text) > 3 and text not in ["Model", "Confidence", "Importance", "API", "Status"]:
-                try:
-                    translated = translation_service.translate_dynamic(text, language)
-                    if translated and translated != text:
-                        _translation_cache[cache_key] = translated  # Cache for future use
-                        return translated
-                except Exception:
-                    pass  # If translation fails, continue to fallback
+            # NEVER call API for UI text - only return static translations or original
+            # UI text should already be in static translations
+            # Only dynamic content (explanations, descriptions) should use API, and that's handled elsewhere
     except Exception:
         pass
     
