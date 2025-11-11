@@ -18,14 +18,6 @@ except ImportError:
     DYNAMIC_TRANSLATION_AVAILABLE = False
     logging.warning("deep-translator not available. Install with: pip install deep-translator")
 
-# Try to import Gemini Pro API (faster and more reliable)
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-    logging.warning("google-generativeai not available. Install with: pip install google-generativeai")
-
 import os
 from dotenv import load_dotenv
 from pathlib import Path
@@ -68,24 +60,6 @@ class TranslationService:
             'ml': 'ml',
             'pa': 'pa'
         }
-        
-        # Gemini Pro API setup (priority - faster and more reliable)
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
-        self.use_gemini = GEMINI_AVAILABLE and bool(self.gemini_api_key)
-        
-        if self.use_gemini:
-            try:
-                genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-pro')
-                logger.info("Gemini Pro API configured - using for translations")
-            except Exception as e:
-                logger.warning(f"Gemini Pro API configuration failed: {e}")
-                self.use_gemini = False
-        else:
-            if not GEMINI_AVAILABLE:
-                logger.info("Gemini Pro not available - using deep-translator")
-            elif not self.gemini_api_key:
-                logger.info("Gemini Pro API key not set - using deep-translator")
         
         self.translations = self._load_translations()
         self.use_dynamic_translation = DYNAMIC_TRANSLATION_AVAILABLE
@@ -431,8 +405,8 @@ class TranslationService:
     
     def translate_dynamic(self, text: str, target_language: str, source_language: str = 'en') -> str:
         """
-        Translate dynamic content - ONLY for truly dynamic text (explanations, descriptions).
-        PRIORITIZES static translations, then Gemini Pro, then deep-translator.
+        Translate dynamic content using deep-translator (free Google Translate API).
+        PRIORITIZES static translations first, then uses deep-translator.
         """
         if target_language == 'en' or not text or not text.strip():
             return text
@@ -444,7 +418,6 @@ class TranslationService:
             return self._translation_cache[cache_key]
         
         # Step 2: Check static translations FIRST (no API call needed!)
-        # Use translate_explanation which ONLY uses static translations (no recursion)
         try:
             static_translated = self.translate_explanation(text, target_language)
             if static_translated and static_translated != text:
@@ -455,31 +428,7 @@ class TranslationService:
         except Exception as e:
             logger.debug(f"Static translation check failed: {e}, proceeding to API")
         
-        # Step 3: Only use Gemini/API for truly dynamic content (not in static translations)
-        # Try Gemini Pro first (faster and more reliable)
-        if self.use_gemini:
-            try:
-                target_lang_name = self.supported_languages.get(target_language, target_language)
-                source_lang_name = self.supported_languages.get(source_language, 'English') if source_language != 'en' else 'English'
-                
-                prompt = f"Translate the following text from {source_lang_name} to {target_lang_name}. Only return the translated text, nothing else:\n\n{text}"
-                
-                response = self.gemini_model.generate_content(prompt)
-                translated = response.text.strip()
-                
-                if translated and translated.strip() and translated != text:
-                    logger.info(f"Translated via Gemini Pro: '{text[:30]}...' to {target_language}")
-                    # Cache the translation
-                    self._translation_cache[cache_key] = translated
-                    return translated
-                else:
-                    # Translation failed or returned empty - return original
-                    logger.debug(f"Gemini returned empty/same for '{text[:30]}...', using original")
-                    return text
-            except Exception as e:
-                logger.warning(f"Gemini Pro translation failed: {e}, falling back to deep-translator")
-        
-        # Fallback to deep-translator (free web API)
+        # Step 3: Use deep-translator for dynamic content (not in static translations)
         if not self.use_dynamic_translation:
             logger.warning("Dynamic translation not available, using static")
             return self.translate_explanation(text, target_language)
@@ -583,94 +532,55 @@ class TranslationService:
                 unique_texts.append(text_stripped)
                 text_to_unique_index[text_stripped] = len(unique_texts) - 1
         
-        logger.info(f"Translating {len(unique_texts)} unique dynamic texts via API (from {len(texts_to_translate)} total, {len(texts)} original) - {len(cached_results)} cached, {len(static_results)} static")
+        logger.info(f"Translating {len(unique_texts)} unique dynamic texts via deep-translator (from {len(texts_to_translate)} total, {len(texts)} original) - {len(cached_results)} cached, {len(static_results)} static")
         
-        # Step 3: Batch translate unique texts
-        translated_unique = []
-        
-        # Try Gemini Pro first (much faster for batch translations)
-        if self.use_gemini:
+        # Step 3: Batch translate unique texts using deep-translator
+        if not self.use_dynamic_translation:
+            translated_unique = [self.translate_explanation(text, target_language) for text in unique_texts]
+        else:
+            # Use deep-translator for unique texts
             try:
-                target_lang_name = self.supported_languages.get(target_language, target_language)
-                source_lang_name = self.supported_languages.get(source_language, 'English') if source_language != 'en' else 'English'
+                target_code = self.lang_code_map.get(target_language, target_language)
+                source_code = self.lang_code_map.get(source_language, source_language)
                 
-                # Combine all unique texts with clear separators
-                separator = "\n---TRANSLATE_SEPARATOR---\n"
-                combined_text = separator.join(unique_texts)
-                
-                prompt = f"Translate the following texts from {source_lang_name} to {target_lang_name}. Each text is separated by '---TRANSLATE_SEPARATOR---'. Return ONLY the translated texts in the same order, separated by the same separator. Do not add any explanations:\n\n{combined_text}"
-                
-                response = self.gemini_model.generate_content(prompt)
-                translated_combined = response.text.strip()
-                
-                # Split back into individual translations
-                translated_list = translated_combined.split(separator)
-                
-                # Clean up any extra whitespace
-                translated_list = [t.strip() for t in translated_list]
-                
-                if len(translated_list) == len(unique_texts):
-                    logger.info(f"Batch translated {len(unique_texts)} unique texts via Gemini Pro to {target_language} (1 API call)")
-                    # Ensure no None values - use original if translation is None/empty
-                    translated_unique = []
-                    for orig, trans in zip(unique_texts, translated_list):
-                        if trans and trans.strip():
-                            clean_trans = trans.strip()
-                            translated_unique.append(clean_trans)
-                            self._translation_cache[(orig, target_language)] = clean_trans
-                        else:
-                            translated_unique.append(orig)  # Use original if translation failed
+                if target_code == source_code:
+                    translated_unique = unique_texts
                 else:
-                    logger.warning(f"Gemini batch split mismatch ({len(translated_list)} vs {len(unique_texts)}), falling back")
-                    translated_unique = None
-            except Exception as e:
-                logger.warning(f"Gemini Pro batch translation failed: {e}, falling back to deep-translator")
-                translated_unique = None
-        
-        # Fallback to deep-translator (free web API)
-        if translated_unique is None:
-            if not self.use_dynamic_translation:
-                translated_unique = [self.translate_explanation(text, target_language) for text in unique_texts]
-            else:
-                # Use deep-translator for unique texts
-                try:
-                    target_code = self.lang_code_map.get(target_language, target_language)
-                    source_code = self.lang_code_map.get(source_language, source_language)
-                    
-                    if target_code == source_code:
-                        translated_unique = unique_texts
-                    else:
-                        translator = GoogleTranslator(source=source_code, target=target_code)
-                        # Translate in larger batches for deep-translator too
-                        chunk_size = 10
-                        translated_unique = []
-                        for i in range(0, len(unique_texts), chunk_size):
-                            chunk = unique_texts[i:i+chunk_size]
-                            try:
-                                sep = " |||SEP||| "
-                                combined = sep.join(chunk)
-                                translated_combined = translator.translate(combined)
-                                chunk_translated = translated_combined.split(sep)
-                                if len(chunk_translated) == len(chunk):
-                                    translated_unique.extend(chunk_translated)
-                                else:
-                                    # Fallback to individual
-                                    for t in chunk:
-                                        translated_unique.append(translator.translate(t[:5000]))
-                            except Exception:
+                    translator = GoogleTranslator(source=source_code, target=target_code)
+                    # Translate in batches for deep-translator
+                    chunk_size = 10
+                    translated_unique = []
+                    for i in range(0, len(unique_texts), chunk_size):
+                        chunk = unique_texts[i:i+chunk_size]
+                        try:
+                            sep = " |||SEP||| "
+                            combined = sep.join(chunk)
+                            translated_combined = translator.translate(combined)
+                            chunk_translated = translated_combined.split(sep)
+                            if len(chunk_translated) == len(chunk):
+                                translated_unique.extend(chunk_translated)
+                            else:
                                 # Fallback to individual
                                 for t in chunk:
                                     try:
                                         translated_unique.append(translator.translate(t[:5000]))
                                     except:
                                         translated_unique.append(t)
-                        
-                        # Cache translations
-                        for orig, trans in zip(unique_texts, translated_unique):
-                            self._translation_cache[(orig, target_language)] = trans
-                except Exception as e:
-                    logger.error(f"Deep-translator batch failed: {e}")
-                    translated_unique = unique_texts  # Return original on error
+                        except Exception:
+                            # Fallback to individual
+                            for t in chunk:
+                                try:
+                                    translated_unique.append(translator.translate(t[:5000]))
+                                except:
+                                    translated_unique.append(t)
+                    
+                    # Cache translations
+                    for orig, trans in zip(unique_texts, translated_unique):
+                        if trans and trans.strip():
+                            self._translation_cache[(orig, target_language)] = trans.strip()
+            except Exception as e:
+                logger.error(f"Deep-translator batch failed: {e}")
+                translated_unique = unique_texts  # Return original on error
         
         # Step 4: Map unique translations back to all texts (including duplicates)
         unique_translation_map = dict(zip(unique_texts, translated_unique))
