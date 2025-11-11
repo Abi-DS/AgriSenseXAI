@@ -241,34 +241,60 @@ def t(text: str, default: str = None) -> str:
             translation_service = backend['translation']
             static_translations = translation_service.translations.get(language, {})
             
-            # Map common UI text to static translation keys
+            # Map ALL UI text to static translation keys (comprehensive mapping for instant translation)
             ui_mapping = {
-                "API Status": None,
-                "Language": None,
-                "Mode": None,
+                "API Status": "api_status",
+                "Language": "language_label",
+                "Mode": "mode_label",
                 "Simple Mode": "simple_mode",
                 "Manual Mode": "manual_mode",
-                "About": None,
+                "About": "about",
                 "City": "city",
                 "State": "state",
                 "Coordinates": "coordinates",
                 "Recommendations": "recommendations",
                 "Key Factors": "key_factors",
-                "Loading location data...": "loading",
+                "Loading location data...": "loading_locations",
                 "Soil Parameters": "soil_parameters",
                 "Location": "location",
-                "Location Selected": "location_selected",
+                "Location Selected": "location_selected_msg",
                 "Get Crop Recommendation": "get_recommendation",
                 "Top Recommended Crops": "top_crops",
-                "Why These Crops?": "explanations",
-                "provides AI-powered crop recommendations with:": None,
-                "Real-time weather data": None,
-                "Soil parameter analysis": None,
-                "LightGBM ML model": None,
-                "SHAP & LIME explanations": None,
-                "Multilingual support": None,
-                "Self-contained app": None,
-                "No separate backend needed!": None,
+                "Why These Crops?": "why_these_crops",
+                "AgroXAI - Crop Recommendation System": "agroxai_title",
+                "Get intelligent crop recommendations with explainable AI": "agroxai_subtitle",
+                "Simple Mode - Select Your Location": "simple_mode_title",
+                "Just select your state and city. We'll automatically get weather and soil data!": "simple_mode_description",
+                "Manual Mode - Enter Soil Parameters": "manual_mode_title",
+                "Enter your soil parameters manually for precise recommendations": "manual_mode_description",
+                "Getting location coordinates from WeatherAPI...": "getting_coordinates",
+                "Getting recommendations with AI analysis...": "getting_recommendations",
+                "Analyzing with AI...": "analyzing_ai",
+                "Model": "model",
+                "Confidence": "confidence",
+                "Importance": "importance",
+                "Use weather data": "use_weather_data",
+                "Enable to get location-specific weather data": "enable_weather_help",
+                "AgroXAI": "agroxai_name",
+                "provides AI-powered crop recommendations with:": "provides_features",
+                "Real-time weather data": "realtime_weather",
+                "Soil parameter analysis": "soil_analysis",
+                "LightGBM ML model": "lightgbm_model",
+                "SHAP & LIME explanations": "shap_lime",
+                "Multilingual support": "multilingual",
+                "Self-contained app": "self_contained",
+                "No separate backend needed!": "no_backend",
+                "WeatherAPI: Configured": "weatherapi_configured",
+                "WeatherAPI: Not set (using fallback)": "weatherapi_not_set",
+                "OpenWeatherMap: Configured": "openweather_configured",
+                "OpenWeatherMap: Not set": "openweather_not_set",
+                "Ambee Soil API: Configured": "ambee_configured",
+                "Ambee Soil API: Not set (using estimates)": "ambee_not_set",
+                "Moisture %": "moisture_percent",
+                "[Positive]": "positive",
+                "[Negative]": "negative",
+                "[Neutral]": "neutral",
+                "Unknown": "unknown"
             }
             
             # Check if text matches a mapping
@@ -563,27 +589,27 @@ with st.sidebar:
     openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
     ambee_key = os.getenv('AMBEE_API_KEY', '')
     
-    st.markdown(f"### {t('API Status', 'API Status')}")
+    st.markdown(f"### {t('API Status', 'api_status')}")
     if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
-        st.success(t("WeatherAPI: Configured", "WeatherAPI: Configured"))
+        st.success(t("WeatherAPI: Configured", "weatherapi_configured"))
     else:
-        st.warning(t("WeatherAPI: Not set (using fallback)", "WeatherAPI: Not set (using fallback)"))
+        st.warning(t("WeatherAPI: Not set (using fallback)", "weatherapi_not_set"))
     
     if openweather_key and openweather_key != 'demo_key' and len(openweather_key) > 10:
-        st.success(t("OpenWeatherMap: Configured", "OpenWeatherMap: Configured"))
+        st.success(t("OpenWeatherMap: Configured", "openweather_configured"))
     else:
-        st.info(t("OpenWeatherMap: Not set", "OpenWeatherMap: Not set"))
+        st.info(t("OpenWeatherMap: Not set", "openweather_not_set"))
     
     if ambee_key and len(ambee_key) > 10:
-        st.success(t("Ambee Soil API: Configured", "Ambee Soil API: Configured"))
+        st.success(t("Ambee Soil API: Configured", "ambee_configured"))
     else:
-        st.info(t("Ambee Soil API: Not set (using estimates)", "Ambee Soil API: Not set (using estimates)"))
+        st.info(t("Ambee Soil API: Not set (using estimates)", "ambee_not_set"))
     
     st.markdown("---")
     
     # Language selector
     selected_lang = st.selectbox(
-        t("Language", "Language / भाषा"),
+        t("Language", "language_label"),
         options=list(LANGUAGES.keys()),
         format_func=lambda x: LANGUAGES[x],
         index=list(LANGUAGES.keys()).index(st.session_state.language) if st.session_state.language in LANGUAGES else 0
@@ -598,35 +624,35 @@ with st.sidebar:
     
     # Mode selector
     mode = st.radio(
-        t("Mode", "Mode"),
+        t("Mode", "mode_label"),
         options=["simple", "manual"],
-        format_func=lambda x: t("Simple Mode", "Simple Mode") if x == "simple" else t("Manual Mode", "Manual Mode"),
+        format_func=lambda x: t("Simple Mode", "simple_mode") if x == "simple" else t("Manual Mode", "manual_mode"),
         index=0 if st.session_state.mode == "simple" else 1
     )
     st.session_state.mode = mode
     
     st.markdown("---")
-    st.markdown(f"### {t('About', 'About')}")
+        st.markdown(f"### {t('About', 'about')}")
     st.markdown(f"""
-    **{t('AgroXAI', 'AgroXAI')}** {t('provides AI-powered crop recommendations with:', 'provides AI-powered crop recommendations with:')}
-    - {t('Real-time weather data', 'Real-time weather data')}
-    - {t('Soil parameter analysis', 'Soil parameter analysis')}
-    - {t('LightGBM ML model', 'LightGBM ML model')}
-    - {t('SHAP & LIME explanations', 'SHAP & LIME explanations')}
-    - {t('Multilingual support', 'Multilingual support')}
+    **{t('AgroXAI', 'agroxai_name')}** {t('provides AI-powered crop recommendations with:', 'provides_features')}
+    - {t('Real-time weather data', 'realtime_weather')}
+    - {t('Soil parameter analysis', 'soil_analysis')}
+    - {t('LightGBM ML model', 'lightgbm_model')}
+    - {t('SHAP & LIME explanations', 'shap_lime')}
+    - {t('Multilingual support', 'multilingual')}
     """)
     
     st.markdown("---")
-    st.markdown(f"**{t('Self-contained app', 'Self-contained app')}** - {t('No separate backend needed!', 'No separate backend needed!')}")
+    st.markdown(f"**{t('Self-contained app', 'self_contained')}** - {t('No separate backend needed!', 'no_backend')}")
 
 # Main content
-st.title(t("AgroXAI - Crop Recommendation System", "AgroXAI - Crop Recommendation System"))
-st.markdown(t("Get intelligent crop recommendations with explainable AI", "Get intelligent crop recommendations with explainable AI"))
+st.title(t("AgroXAI - Crop Recommendation System", "agroxai_title"))
+st.markdown(t("Get intelligent crop recommendations with explainable AI", "agroxai_subtitle"))
 
 if st.session_state.mode == "simple":
     # Simple Mode - State/City Selection
-    st.header(t("Simple Mode - Select Your Location", "Simple Mode - Select Your Location"))
-    st.info(t("Just select your state and city. We'll automatically get weather and soil data!", "Just select your state and city. We'll automatically get weather and soil data!"))
+    st.header(t("Simple Mode - Select Your Location", "simple_mode_title"))
+    st.info(t("Just select your state and city. We'll automatically get weather and soil data!", "simple_mode_description"))
     
     col1, col2 = st.columns(2)
     
@@ -657,7 +683,7 @@ if st.session_state.mode == "simple":
         
         # Debug info (can be removed later)
         if selected_state and len(cities) == 0:
-            st.warning(t(f"No cities found for {selected_state}. Check locations.json file.", f"No cities found for {selected_state}. Check locations.json file."))
+            st.warning(t("No cities found for {state}. Check locations.json file.", "no_cities_found").format(state=selected_state))
         
         # Calculate index for city selectbox
         city_index = 0
@@ -680,7 +706,7 @@ if st.session_state.mode == "simple":
         if selected_state and selected_city:
             if (not st.session_state.selected_city_data or 
                 st.session_state.selected_city_data.get('name') != selected_city):
-                with st.spinner(t("Getting location coordinates from WeatherAPI...", "Getting location coordinates from WeatherAPI...")):
+                with st.spinner(t("Getting location coordinates from WeatherAPI...", "getting_coordinates")):
                     city_data = search_city(selected_city, selected_state)
                     if city_data:
                         st.session_state.selected_city_data = city_data
@@ -695,11 +721,11 @@ if st.session_state.mode == "simple":
     
     with col2:
         if st.session_state.selected_city_data:
-            st.success(t("Location Selected", "Location Selected"))
+            st.success(t("Location Selected", "location_selected_msg"))
             city_data = st.session_state.selected_city_data
-            st.write(f"**{t('City', 'City')}:** {city_data.get('name', selected_city)}")
-            st.write(f"**{t('State', 'State')}:** {city_data.get('state', selected_state)}")
-            st.write(f"**{t('Coordinates', 'Coordinates')}:** {city_data.get('latitude', 0):.4f}, {city_data.get('longitude', 0):.4f}")
+            st.write(f"**{t('City', 'city')}:** {city_data.get('name', selected_city)}")
+            st.write(f"**{t('State', 'state')}:** {city_data.get('state', selected_state)}")
+            st.write(f"**{t('Coordinates', 'coordinates')}:** {city_data.get('latitude', 0):.4f}, {city_data.get('longitude', 0):.4f}")
     
     # Submit button
     if st.button(
@@ -709,7 +735,7 @@ if st.session_state.mode == "simple":
         use_container_width=True
     ):
         if st.session_state.selected_city_data:
-            with st.spinner(t("Getting recommendations with AI analysis...", "Getting recommendations with AI analysis...")):
+            with st.spinner(t("Getting recommendations with AI analysis...", "getting_recommendations")):
                 payload = {
                     "ph": 6.5,
                     "nitrogen": 40,
@@ -740,10 +766,10 @@ if st.session_state.mode == "simple":
         
         # Model version (like Next.js frontend)
         model_version = result.get('model_version', 'modular_v1.0')
-        st.caption(f"{t('Model', 'Model')}: {model_version}")
+        st.caption(f"{t('Model', 'model')}: {model_version}")
         
         # Top crops
-        st.subheader(st.session_state.translations.get('top_crops', 'Top Recommended Crops'))
+        st.subheader(t("Top Recommended Crops", "top_crops"))
         top_crops = result.get('top_crops', [])
         
         cols = st.columns(min(len(top_crops), 5))
@@ -754,11 +780,11 @@ if st.session_state.mode == "simple":
                 st.metric(
                     label=crop_name,
                     value=f"{score:.1%}",
-                    help=f"{t('Confidence', 'Confidence')}: {score:.2%}"
+                    help=f"{t('Confidence', 'confidence')}: {score:.2%}"
                 )
         
         # Explanations
-        st.subheader(st.session_state.translations.get('explanations', 'Why These Crops?'))
+        st.subheader(t("Why These Crops?", "why_these_crops"))
         explanations = result.get('explanations', [])
         
         for exp in explanations:
@@ -771,7 +797,7 @@ if st.session_state.mode == "simple":
                 # Attributions
                 attributions = exp.get('attributions', [])
                 if attributions:
-                    st.markdown(f"**{t('Key Factors', 'Key Factors')}:**")
+                    st.markdown(f"**{t('Key Factors', 'key_factors')}:**")
                     for attr in attributions[:5]:
                         feature = attr.get('feature_translated') or attr.get('feature', '')
                         direction = attr.get('direction_translated') or attr.get('direction', '')
@@ -788,17 +814,17 @@ if st.session_state.mode == "simple":
                         
                         # Normalize importance to 0-1 range for progress bar
                         normalized_importance = max(0.0, min(1.0, float(importance)))
-                        st.progress(normalized_importance, text=f"{t('Importance', 'Importance')}: {importance:.1%}")
+                        st.progress(normalized_importance, text=f"{t('Importance', 'importance')}: {importance:.1%}")
 
 else:
     # Manual Mode - Full Parameter Input
-    st.header(t("Manual Mode - Enter Soil Parameters", "Manual Mode - Enter Soil Parameters"))
-    st.info(t("Enter your soil parameters manually for precise recommendations", "Enter your soil parameters manually for precise recommendations"))
+    st.header(t("Manual Mode - Enter Soil Parameters", "manual_mode_title"))
+    st.info(t("Enter your soil parameters manually for precise recommendations", "manual_mode_description"))
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader(t("Soil Parameters", "Soil Parameters"))
+        st.subheader(t("Soil Parameters", "soil_parameters"))
         ph = st.slider(
             st.session_state.translations.get('ph_level', 'pH Level'),
             min_value=0.0,
@@ -840,7 +866,7 @@ else:
         )
     
     with col2:
-        st.subheader(t("Location", "Location"))
+        st.subheader(t("Location", "location"))
         
         # State selector
         state_options = [""] + [s['state'] for s in st.session_state.states]
@@ -873,13 +899,13 @@ else:
             if city_data:
                 manual_lat = city_data.get('latitude', 20.5937)
                 manual_lon = city_data.get('longitude', 78.9629)
-                st.success(t(f"Location: {manual_city}, {manual_state}", f"Location: {manual_city}, {manual_state}"))
-                st.caption(t(f"Coordinates: {manual_lat:.4f}, {manual_lon:.4f}", f"Coordinates: {manual_lat:.4f}, {manual_lon:.4f}"))
+                st.success(f"{t('Location', 'location')}: {manual_city}, {manual_state}")
+                st.caption(f"{t('Coordinates', 'coordinates')}: {manual_lat:.4f}, {manual_lon:.4f}")
         
         use_weather = st.checkbox(
-            t("Use weather data", "Use weather data"),
+            t("Use weather data", "use_weather_data"),
             value=True,
-            help=t("Enable to get location-specific weather data", "Enable to get location-specific weather data")
+            help=t("Enable to get location-specific weather data", "enable_weather_help")
         )
     
     # Submit button
@@ -888,7 +914,7 @@ else:
         type="primary",
         use_container_width=True
     ):
-        with st.spinner(t("Analyzing with AI...", "Analyzing with AI...")):
+        with st.spinner(t("Analyzing with AI...", "analyzing_ai")):
             payload = {
                 "ph": ph,
                 "nitrogen": nitrogen,
@@ -918,9 +944,9 @@ else:
         
         # Model version
         model_version = result.get('model_version', 'modular_v1.0')
-        st.caption(f"{t('Model', 'Model')}: {model_version}")
+        st.caption(f"{t('Model', 'model')}: {model_version}")
         
-        st.subheader(st.session_state.translations.get('top_crops', 'Top Recommended Crops'))
+        st.subheader(t("Top Recommended Crops", "top_crops"))
         top_crops = result.get('top_crops', [])
         
         cols = st.columns(min(len(top_crops), 5))
@@ -931,10 +957,10 @@ else:
                 st.metric(
                     label=crop_name,
                     value=f"{score:.1%}",
-                    help=f"{t('Confidence', 'Confidence')}: {score:.2%}"
+                    help=f"{t('Confidence', 'confidence')}: {score:.2%}"
                 )
         
-        st.subheader(st.session_state.translations.get('explanations', 'Why These Crops?'))
+        st.subheader(t("Why These Crops?", "why_these_crops"))
         explanations = result.get('explanations', [])
         
         for exp in explanations:
@@ -946,7 +972,7 @@ else:
                 
                 attributions = exp.get('attributions', [])
                 if attributions:
-                    st.markdown(f"**{t('Key Factors', 'Key Factors')}:**")
+                    st.markdown(f"**{t('Key Factors', 'key_factors')}:**")
                     for attr in attributions[:5]:
                         feature = attr.get('feature_translated') or attr.get('feature', '')
                         direction = attr.get('direction_translated') or attr.get('direction', '')
@@ -963,7 +989,7 @@ else:
                         
                         # Normalize importance to 0-1 range for progress bar
                         normalized_importance = max(0.0, min(1.0, float(importance)))
-                        st.progress(normalized_importance, text=f"{t('Importance', 'Importance')}: {importance:.1%}")
+                        st.progress(normalized_importance, text=f"{t('Importance', 'importance')}: {importance:.1%}")
 
 # Footer
 st.markdown("---")
