@@ -371,7 +371,10 @@ st.session_state.translations = load_translations(st.session_state.language)
 # Load states if not loaded
 if not st.session_state.states:
     with st.spinner("Loading location data..."):
-        st.session_state.states = load_locations()
+        loaded_states = load_locations()
+        st.session_state.states = loaded_states
+        if len(loaded_states) == 0:
+            st.error("No states loaded! Please check that backend/data/locations.json exists and contains valid data.")
 
 # Sidebar for language and mode selection
 with st.sidebar:
@@ -429,11 +432,19 @@ if st.session_state.mode == "simple":
     with col1:
         # State selector
         state_options = [""] + [s['state'] for s in st.session_state.states]
+        previous_state = st.session_state.selected_state
         selected_state = st.selectbox(
             st.session_state.translations.get('state', 'State'),
             options=state_options,
-            index=0 if not st.session_state.selected_state else state_options.index(st.session_state.selected_state) if st.session_state.selected_state in state_options else 0
+            index=0 if not st.session_state.selected_state else (state_options.index(st.session_state.selected_state) if st.session_state.selected_state in state_options else 0),
+            key="state_selectbox"
         )
+        
+        # Reset city if state changed
+        if previous_state != selected_state:
+            st.session_state.selected_city = ''
+            st.session_state.selected_city_data = None
+        
         st.session_state.selected_state = selected_state
         
         # City selector (depends on state)
@@ -443,19 +454,21 @@ if st.session_state.mode == "simple":
             if state_data:
                 cities = state_data.get('cities', [])
         
-        # Reset city selection if state changed
-        if st.session_state.selected_state != selected_state:
-            st.session_state.selected_city = ''
-            st.session_state.selected_city_data = None
+        # Debug info (can be removed later)
+        if selected_state and len(cities) == 0:
+            st.warning(f"No cities found for {selected_state}. Check locations.json file.")
         
         # Calculate index for city selectbox
         city_index = 0
-        if st.session_state.selected_city and st.session_state.selected_city in cities:
+        if st.session_state.selected_city and cities and st.session_state.selected_city in cities:
             city_index = cities.index(st.session_state.selected_city) + 1
+        
+        # City options
+        city_options = [""] + cities if cities else [""]
         
         selected_city = st.selectbox(
             st.session_state.translations.get('city', 'City'),
-            options=[""] + cities if cities else [""],
+            options=city_options,
             disabled=not selected_state or len(cities) == 0,
             index=city_index,
             key="city_selectbox"
