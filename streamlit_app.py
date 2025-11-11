@@ -576,7 +576,7 @@ with st.sidebar:
     openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
     ambee_key = os.getenv('AMBEE_API_KEY', '')
     
-        st.markdown(f"### {t('API Status', 'API Status')}")
+    st.markdown(f"### {t('API Status', 'API Status')}")
     if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
         st.success(t("WeatherAPI: Configured", "WeatherAPI: Configured"))
     else:
@@ -619,7 +619,7 @@ with st.sidebar:
     st.session_state.mode = mode
     
     st.markdown("---")
-        st.markdown(f"### {t('About', 'About')}")
+    st.markdown(f"### {t('About', 'About')}")
     st.markdown(f"""
     **{t('AgroXAI', 'AgroXAI')}** {t('provides AI-powered crop recommendations with:', 'provides AI-powered crop recommendations with:')}
     - {t('Real-time weather data', 'Real-time weather data')}
@@ -1065,3 +1065,4 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
+
