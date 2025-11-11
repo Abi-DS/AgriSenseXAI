@@ -475,10 +475,15 @@ async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
             crop_name = exp.crop_name
             crop_translated = backend['translation'].translate_crop_name(crop_name, language) if language != 'en' else crop_name
             
-            # Get translated explanation from map
+            # Get translated explanation from map, or translate dynamically if not found
             explanation_text = exp.overall_explanation
-            if language != 'en' and explanation_text in translation_map:
-                explanation_text = translation_map[explanation_text]
+            explanation_text_translated = explanation_text
+            if language != 'en':
+                if explanation_text in translation_map:
+                    explanation_text_translated = translation_map[explanation_text]
+                else:
+                    # If not in map, translate it dynamically (shouldn't happen if batch worked, but fallback)
+                    explanation_text_translated = backend['translation'].translate_dynamic(explanation_text, language)
             
             attributions = []
             for factor in exp.primary_factors[:5]:
@@ -490,10 +495,14 @@ async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
                 direction_translated = all_translations.get(language, {}).get(direction, direction) if language != 'en' else direction
                 
                 description = factor.description
-                # Get translated description from map
+                # Get translated description from map, or translate dynamically if not found
                 description_translated = description
-                if language != 'en' and description and description in translation_map:
-                    description_translated = translation_map[description]
+                if language != 'en' and description:
+                    if description in translation_map:
+                        description_translated = translation_map[description]
+                    else:
+                        # If not in map, translate it dynamically
+                        description_translated = backend['translation'].translate_dynamic(description, language)
                 
                 attributions.append({
                     'feature': feature,
@@ -511,13 +520,17 @@ async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
                 'crop': crop_name,
                 'crop_translated': crop_translated,
                 'text': explanation_text,
-                'text_translated': explanation_text if language != 'en' else explanation_text,
+                'text_translated': explanation_text_translated,
                 'attributions': attributions
             })
         
-        # Get translated weather summary from map
-        if weather_summary and language != 'en' and weather_summary in translation_map:
-            weather_summary = translation_map[weather_summary]
+        # Get translated weather summary from map, or translate if not found
+        if weather_summary and language != 'en':
+            if weather_summary in translation_map:
+                weather_summary = translation_map[weather_summary]
+            else:
+                # Fallback: translate dynamically
+                weather_summary = backend['translation'].translate_dynamic(weather_summary, language)
         
         return {
             'top_crops': top_crops,
@@ -563,7 +576,7 @@ with st.sidebar:
     openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
     ambee_key = os.getenv('AMBEE_API_KEY', '')
     
-    st.markdown(f"### {t('API Status', 'API Status')}")
+        st.markdown(f"### {t('API Status', 'API Status')}")
     if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
         st.success(t("WeatherAPI: Configured", "WeatherAPI: Configured"))
     else:
@@ -606,7 +619,7 @@ with st.sidebar:
     st.session_state.mode = mode
     
     st.markdown("---")
-    st.markdown(f"### {t('About', 'About')}")
+        st.markdown(f"### {t('About', 'About')}")
     st.markdown(f"""
     **{t('AgroXAI', 'AgroXAI')}** {t('provides AI-powered crop recommendations with:', 'provides AI-powered crop recommendations with:')}
     - {t('Real-time weather data', 'Real-time weather data')}
@@ -968,5 +981,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(f"**{t('AgroXAI v1.0', 'AgroXAI v1.0')}** | {t('Powered by LightGBM, SHAP, and LIME', 'Powered by LightGBM, SHAP, and LIME')} | {t('Built with Streamlit', 'Built with Streamlit')}")
-
-
