@@ -31,8 +31,30 @@ except ImportError as e:
     from backend.modules.xai_engine.explanation_generator import ExplanationGenerator
     from backend.modules.multilingual.translation_service import TranslationService
 
-# Load environment variables
+# Load environment variables - prioritize Streamlit secrets, then .env file
 from dotenv import load_dotenv
+import os
+
+# First, try to get from Streamlit secrets (for Streamlit Cloud)
+# Note: This must be done before st.set_page_config() in some cases
+try:
+    if hasattr(st, 'secrets'):
+        # Streamlit Cloud secrets - get and set in environment
+        weatherapi_secret = st.secrets.get('WEATHERAPI_KEY', '')
+        openweather_secret = st.secrets.get('OPENWEATHER_API_KEY', '')
+        ambee_secret = st.secrets.get('AMBEE_API_KEY', '')
+        
+        if weatherapi_secret:
+            os.environ['WEATHERAPI_KEY'] = weatherapi_secret
+        if openweather_secret:
+            os.environ['OPENWEATHER_API_KEY'] = openweather_secret
+        if ambee_secret:
+            os.environ['AMBEE_API_KEY'] = ambee_secret
+except (FileNotFoundError, AttributeError, KeyError, Exception) as e:
+    # Secrets not available (local dev or not configured)
+    pass
+
+# Then try .env file (for local development)
 env_path = current_dir / ".env"
 if not env_path.exists():
     env_path = current_dir / "backend" / ".env"
@@ -82,7 +104,30 @@ if 'backend_initialized' not in st.session_state:
 def initialize_backend():
     """Initialize all backend components"""
     try:
-        # Initialize components
+        # Check API keys before initializing - re-read from environment
+        weatherapi_key = os.getenv('WEATHERAPI_KEY', '')
+        openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
+        ambee_key = os.getenv('AMBEE_API_KEY', '')
+        
+        # Log API key status (for debugging in Streamlit Cloud logs)
+        if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
+            print(f"[INFO] WeatherAPI key is set (length: {len(weatherapi_key)})")
+        else:
+            print("[WARNING] WeatherAPI key not found or invalid - will use fallback")
+            if weatherapi_key:
+                print(f"[DEBUG] WEATHERAPI_KEY value: {weatherapi_key[:5]}...")
+        
+        if openweather_key and openweather_key != 'demo_key' and len(openweather_key) > 10:
+            print(f"[INFO] OpenWeatherMap key is set (length: {len(openweather_key)})")
+        else:
+            print("[WARNING] OpenWeatherMap key not found - will use fallback")
+        
+        if ambee_key and len(ambee_key) > 10:
+            print(f"[INFO] Ambee API key is set (length: {len(ambee_key)})")
+        else:
+            print("[INFO] Ambee API key not set - will use location estimates")
+        
+        # Initialize components (they will read from os.getenv)
         weather_acquisition = WeatherDataAcquisition()
         soil_handler = SoilDataHandler()
         ml_model = CropRecommendationModel()
@@ -110,6 +155,8 @@ def initialize_backend():
         }
     except Exception as e:
         st.error(f"Failed to initialize backend: {e}")
+        import traceback
+        st.code(traceback.format_exc())
         return None
 
 # Load backend components
@@ -383,6 +430,29 @@ with st.sidebar:
     st.title("AgroXAI")
     st.markdown("---")
     
+    # Show API key status
+    weatherapi_key = os.getenv('WEATHERAPI_KEY', '')
+    openweather_key = os.getenv('OPENWEATHER_API_KEY', '')
+    ambee_key = os.getenv('AMBEE_API_KEY', '')
+    
+    st.markdown("### API Status")
+    if weatherapi_key and weatherapi_key != 'demo_key' and len(weatherapi_key) > 10:
+        st.success("WeatherAPI: Configured")
+    else:
+        st.warning("WeatherAPI: Not set (using fallback)")
+    
+    if openweather_key and openweather_key != 'demo_key' and len(openweather_key) > 10:
+        st.success("OpenWeatherMap: Configured")
+    else:
+        st.info("OpenWeatherMap: Not set")
+    
+    if ambee_key and len(ambee_key) > 10:
+        st.success("Ambee Soil API: Configured")
+    else:
+        st.info("Ambee Soil API: Not set (using estimates)")
+    
+    st.markdown("---")
+    
     # Language selector
     selected_lang = st.selectbox(
         "Language / भाषा",
@@ -586,7 +656,10 @@ if st.session_state.mode == "simple":
                         # Display like Next.js frontend: Feature: Direction — Description
                         description_text = f" — {description}" if description else ""
                         st.write(f"{direction_text} **{feature}**: {direction}{description_text}{method_badge}")
-                        st.progress(importance, text=f"Importance: {importance:.1%}")
+                        
+                        # Normalize importance to 0-1 range for progress bar
+                        normalized_importance = max(0.0, min(1.0, float(importance)))
+                        st.progress(normalized_importance, text=f"Importance: {importance:.1%}")
 
 else:
     # Manual Mode - Full Parameter Input
@@ -758,7 +831,10 @@ else:
                         # Display like Next.js frontend: Feature: Direction — Description
                         description_text = f" — {description}" if description else ""
                         st.write(f"{direction_text} **{feature}**: {direction}{description_text}{method_badge}")
-                        st.progress(importance, text=f"Importance: {importance:.1%}")
+                        
+                        # Normalize importance to 0-1 range for progress bar
+                        normalized_importance = max(0.0, min(1.0, float(importance)))
+                        st.progress(normalized_importance, text=f"Importance: {importance:.1%}")
 
 # Footer
 st.markdown("---")
