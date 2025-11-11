@@ -221,11 +221,19 @@ def preload_ui_translations(language: str):
     # This avoids any potential blocking issues
     pass
 
+# Translation cache to avoid re-translating same content
+_translation_cache = {}
+
 def t(text: str, default: str = None) -> str:
-    """Fast translation helper - uses static translations directly (NO API calls, NO blocking)"""
+    """Fast translation helper - uses static translations + cached dynamic translations"""
     language = st.session_state.get('language', 'en')
     if language == 'en':
         return default or text
+    
+    # Check cache first (for previously translated content)
+    cache_key = f"{language}:{text}"
+    if cache_key in _translation_cache:
+        return _translation_cache[cache_key]
     
     # Try to get static translations directly from backend (if available)
     try:
@@ -235,7 +243,7 @@ def t(text: str, default: str = None) -> str:
             
             # Map common UI text to static translation keys
             ui_mapping = {
-                "API Status": None,  # Keep as is
+                "API Status": None,
                 "Language": None,
                 "Mode": None,
                 "Simple Mode": "simple_mode",
@@ -253,27 +261,53 @@ def t(text: str, default: str = None) -> str:
                 "Get Crop Recommendation": "get_recommendation",
                 "Top Recommended Crops": "top_crops",
                 "Why These Crops?": "explanations",
+                "provides AI-powered crop recommendations with:": None,
+                "Real-time weather data": None,
+                "Soil parameter analysis": None,
+                "LightGBM ML model": None,
+                "SHAP & LIME explanations": None,
+                "Multilingual support": None,
+                "Self-contained app": None,
+                "No separate backend needed!": None,
             }
             
             # Check if text matches a mapping
             if text in ui_mapping:
                 key = ui_mapping[text]
                 if key and key in static_translations:
-                    return static_translations[key]
+                    result = static_translations[key]
+                    _translation_cache[cache_key] = result  # Cache it
+                    return result
             
             # Check static translations directly
             if text in static_translations:
-                return static_translations[text]
+                result = static_translations[text]
+                _translation_cache[cache_key] = result
+                return result
             
             # Check with default
             if default and default in static_translations:
-                return static_translations[default]
+                result = static_translations[default]
+                _translation_cache[cache_key] = result
+                return result
+            
+            # For dynamic content, use dynamic translation (but cache it)
+            # Only translate if it's meaningful text (not too short, not technical terms)
+            if len(text) > 3 and text not in ["Model", "Confidence", "Importance", "API", "Status"]:
+                try:
+                    translated = translation_service.translate_dynamic(text, language)
+                    if translated and translated != text:
+                        _translation_cache[cache_key] = translated  # Cache for future use
+                        return translated
+                except Exception:
+                    pass  # If translation fails, continue to fallback
     except Exception:
-        # If anything fails, just return original text (no blocking)
         pass
     
-    # Fallback: return original text (no dynamic translation to avoid blocking)
-    return default or text
+    # Fallback: return original text
+    result = default or text
+    _translation_cache[cache_key] = result  # Cache even the original
+    return result
 
 async def search_city_async(city_name: str, state: str) -> Optional[Dict]:
     """Search for city coordinates using WeatherAPI (prioritized) with fallback to static data"""
@@ -412,14 +446,46 @@ async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
             })
         
         explanations_list = []
+        
+        # OPTIMIZED: Collect all text to translate, then batch translate (much faster!)
+        translation_map = {}
+        if language != 'en':
+            texts_to_translate = []
+            
+            # Collect all explanation texts and descriptions
+            for exp in explanations:
+                texts_to_translate.append(exp.overall_explanation)
+                for factor in exp.primary_factors[:5]:
+                    if factor.description:
+                        texts_to_translate.append(factor.description)
+            
+            # Add weather summary
+            if weather_summary:
+                texts_to_translate.append(weather_summary)
+            
+            # Batch translate all texts at once (1-2 API calls instead of 20+)
+            if texts_to_translate:
+                try:
+                    translated_texts = backend['translation'].translate_batch(texts_to_translate, language, 'en')
+                    for orig, trans in zip(texts_to_translate, translated_texts):
+                        translation_map[orig] = trans
+                except Exception:
+                    # Fallback: translate individually (still better than before)
+                    for text in texts_to_translate:
+                        try:
+                            translation_map[text] = backend['translation'].translate_dynamic(text, language)
+                        except:
+                            translation_map[text] = text
+        
+        # Build explanations using translated text from map
         for exp in explanations:
             crop_name = exp.crop_name
             crop_translated = backend['translation'].translate_crop_name(crop_name, language) if language != 'en' else crop_name
             
-            # Translate explanation
+            # Get translated explanation from map
             explanation_text = exp.overall_explanation
-            if language != 'en':
-                explanation_text = backend['translation'].translate_dynamic(explanation_text, language)
+            if language != 'en' and explanation_text in translation_map:
+                explanation_text = translation_map[explanation_text]
             
             attributions = []
             for factor in exp.primary_factors[:5]:
@@ -431,7 +497,10 @@ async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
                 direction_translated = all_translations.get(language, {}).get(direction, direction) if language != 'en' else direction
                 
                 description = factor.description
-                description_translated = backend['translation'].translate_dynamic(description, language) if language != 'en' and description else description
+                # Get translated description from map
+                description_translated = description
+                if language != 'en' and description and description in translation_map:
+                    description_translated = translation_map[description]
                 
                 attributions.append({
                     'feature': feature,
@@ -453,9 +522,9 @@ async def get_recommendation_async(payload: Dict) -> Optional[Dict]:
                 'attributions': attributions
             })
         
-        # Translate weather summary
-        if weather_summary and language != 'en':
-            weather_summary = backend['translation'].translate_dynamic(weather_summary, language)
+        # Get translated weather summary from map
+        if weather_summary and language != 'en' and weather_summary in translation_map:
+            weather_summary = translation_map[weather_summary]
         
         return {
             'top_crops': top_crops,
