@@ -137,7 +137,8 @@ def load_locations():
                         continue
                     if state not in states_dict:
                         states_dict[state] = {'state': state, 'cities': []}
-                    city_name = loc.get('name', loc.get('city', ''))
+                    # Try district first (as in locations.json), then name, then city
+                    city_name = loc.get('district', loc.get('name', loc.get('city', '')))
                     if city_name and city_name not in states_dict[state]['cities']:
                         states_dict[state]['cities'].append(city_name)
                 # Sort cities for each state
@@ -192,7 +193,7 @@ async def search_city_async(city_name: str, state: str) -> Optional[Dict]:
     except Exception as e:
         st.warning(f"WeatherAPI city search failed: {e}")
     
-    # Fallback to static locations.json
+    # Fallback to static locations.json (uses "district" field)
     try:
         data_dir = current_dir / "backend" / "data"
         locations_file = data_dir / "locations.json"
@@ -201,8 +202,9 @@ async def search_city_async(city_name: str, state: str) -> Optional[Dict]:
             with open(locations_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 for loc in data:
-                    if (loc.get('name', '').lower() == city_name.lower() or 
-                        loc.get('city', '').lower() == city_name.lower()):
+                    # Check district, name, or city fields
+                    loc_city = loc.get('district', loc.get('name', loc.get('city', '')))
+                    if loc_city.lower() == city_name.lower():
                         if loc.get('state', '').lower() == state.lower():
                             return {
                                 'name': city_name,
