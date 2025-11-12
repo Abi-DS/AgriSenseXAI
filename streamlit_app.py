@@ -109,30 +109,127 @@ def create_tts_button_simple(text: str, lang_code: str):
         // Get elements
         const errorDiv = document.getElementById('tts-error-' + containerId);
         const playBtn = document.getElementById('tts-play-' + containerId);
-        const pauseBtn = document.getElementById('tts-pause-' + containerId);
         const stopBtn = document.getElementById('tts-stop-' + containerId);
         
-        let currentUtterance = null;
-        let voicesLoaded = false;
+        let currentAudio = null;
+        let isPlaying = false;
         
-        // Check if speechSynthesis is supported
-        if (!('speechSynthesis' in window)) {{
-            errorDiv.textContent = 'Text-to-speech not supported in your browser';
-            errorDiv.style.display = 'block';
-            playBtn.disabled = true;
-            playBtn.style.opacity = '0.5';
-            playBtn.style.cursor = 'not-allowed';
-            return;
+        // Function to reset UI
+        function resetUI() {{
+            playBtn.style.display = 'block';
+            playBtn.textContent = '🔊 Play';
+            stopBtn.style.display = 'none';
+            isPlaying = false;
         }}
         
-        // Function to populate and get voices (handles async loading)
-        function getVoices() {{
-            const voices = synth.getVoices();
-            if (voices.length > 0 && !voicesLoaded) {{
-                voicesLoaded = true;
-                console.log('TTS: Loaded', voices.length, 'voices');
-                // Log available languages for debugging
-                const langVoices = voices.filter(v => v.lang.includes('ta') || v.lang.includes('hi') || v.lang.includes('te') || v.lang.includes('bn') || v.lang.includes('ml'));
+        // Function to show playing state
+        function showPlayingState() {{
+            playBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+            isPlaying = true;
+        }}
+        
+        // Play button click handler - uses Google Translate TTS (free, no API key)
+        playBtn.addEventListener('click', function() {{
+            if (isPlaying) {{
+                return;
+            }}
+            
+            // Stop any current audio
+            if (currentAudio) {{
+                currentAudio.pause();
+                currentAudio = null;
+            }}
+            
+            // Use Google Translate TTS API (free, works for all languages including Tamil)
+            // Split long text into chunks (Google TTS has character limit)
+            const maxLength = 200;
+            const textChunks = [];
+            let currentChunk = '';
+            const words = textToRead.split(' ');
+            
+            for (let i = 0; i < words.length; i++) {{
+                if ((currentChunk + ' ' + words[i]).length <= maxLength) {{
+                    currentChunk += (currentChunk ? ' ' : '') + words[i];
+                }} else {{
+                    if (currentChunk) {{
+                        textChunks.push(currentChunk);
+                    }}
+                    currentChunk = words[i];
+                }}
+            }}
+            if (currentChunk) {{
+                textChunks.push(currentChunk);
+            }}
+            
+            showPlayingState();
+            errorDiv.style.display = 'none';
+            
+            // Play chunks sequentially
+            let chunkIndex = 0;
+            
+            function playNextChunk() {{
+                if (chunkIndex >= textChunks.length) {{
+                    resetUI();
+                    currentAudio = null;
+                    return;
+                }}
+                
+                const ttsUrl = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=' + langCode + '&client=tw-ob&q=' + encodeURIComponent(textChunks[chunkIndex]);
+                
+                currentAudio = new Audio(ttsUrl);
+                
+                currentAudio.onended = function() {{
+                    chunkIndex++;
+                    playNextChunk();
+                }};
+                
+                currentAudio.onerror = function(event) {{
+                    console.error('TTS Error:', event);
+                    if (chunkIndex === 0) {{
+                        errorDiv.textContent = 'Error loading audio. Please try again.';
+                        errorDiv.style.display = 'block';
+                    }}
+                    chunkIndex++;
+                    playNextChunk();
+                }};
+                
+                currentAudio.play().catch(function(error) {{
+                    console.error('Play error:', error);
+                    if (chunkIndex === 0) {{
+                        errorDiv.textContent = 'Error playing audio: ' + error.message;
+                        errorDiv.style.display = 'block';
+                    }}
+                    chunkIndex++;
+                    playNextChunk();
+                }});
+            }}
+            
+            playNextChunk();
+        }});
+        
+        // Stop button click handler
+        stopBtn.addEventListener('click', function() {{
+            if (currentAudio) {{
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }}
+            resetUI();
+        }});
+        
+        // Stop audio if page is being unloaded
+        window.addEventListener('beforeunload', function() {{
+            if (currentAudio) {{
+                currentAudio.pause();
+                currentAudio = null;
+            }}
+        }});
+    }})();
+    </script>
+    """, height=50)
+
+# Language options
                 if (langVoices.length > 0) {{
                     console.log('TTS: Found Indian language voices:', langVoices.map(v => v.name + ' (' + v.lang + ')'));
                 }}
