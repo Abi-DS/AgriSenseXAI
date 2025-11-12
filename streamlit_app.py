@@ -4,13 +4,11 @@ All backend functionality integrated directly
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 import sys
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
 import asyncio
-import json
 
 # Add backend to path - fix the path setup
 current_dir = Path(__file__).parent
@@ -72,333 +70,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# TTS component using cloud API (no installation required)
-def create_tts_button_simple(text: str, lang_code: str):
-    """Create a TTS button using Google Translate TTS API - works for all languages without installation"""
-    component_id = f"tts_{hash(text) % 100000}"
-    text_escaped = json.dumps(text)
-    
-    # Language code mapping for Google Translate TTS (free, no API key needed)
-    lang_code_map = {
-        'en': 'en', 'hi': 'hi', 'ta': 'ta', 'te': 'te', 
-        'bn': 'bn', 'ml': 'ml', 'mr': 'mr', 'gu': 'gu', 'kn': 'kn', 'pa': 'pa'
-    }
-    lang_final = lang_code_map.get(lang_code, 'en')
-    
-    # Use Google Translate TTS API (free, no API key, works for all languages)
-    components.html(f"""
-    <div id="tts-container-{component_id}" style="width: 100%;">
-        <div id="tts-error-{component_id}" style="color: red; display: none; font-size: 12px; margin-bottom: 4px;"></div>
-        <div style="display: flex; gap: 4px; align-items: center;">
-            <button id="tts-play-{component_id}" style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; flex: 1;">
-                🔊 Play
-            </button>
-            <button id="tts-stop-{component_id}" style="background: #c33; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; display: none;">
-                ⏹️ Stop
-            </button>
-        </div>
-    </div>
-    
-    <script>
-    (function() {{
-        const containerId = '{component_id}';
-        const textToRead = {text_escaped};
-        const langCode = '{lang_final}';
-        
-        // Get elements
-        const errorDiv = document.getElementById('tts-error-' + containerId);
-        const playBtn = document.getElementById('tts-play-' + containerId);
-        const stopBtn = document.getElementById('tts-stop-' + containerId);
-        
-        let currentAudio = null;
-        let isPlaying = false;
-        
-        // Function to reset UI
-        function resetUI() {{
-            playBtn.style.display = 'block';
-            playBtn.textContent = '🔊 Play';
-            stopBtn.style.display = 'none';
-            isPlaying = false;
-        }}
-        
-        // Function to show playing state
-        function showPlayingState() {{
-            playBtn.style.display = 'none';
-            stopBtn.style.display = 'block';
-            isPlaying = true;
-        }}
-        
-        // Play button click handler - uses Google Translate TTS (free, no API key)
-        playBtn.addEventListener('click', function() {{
-            if (isPlaying) {{
-                return;
-            }}
-            
-            // Stop any current audio
-            if (currentAudio) {{
-                currentAudio.pause();
-                currentAudio = null;
-            }}
-            
-            // Use Google Translate TTS API (free, works for all languages including Tamil)
-            // Split long text into chunks (Google TTS has character limit)
-            const maxLength = 200;
-            const textChunks = [];
-            let currentChunk = '';
-            const words = textToRead.split(' ');
-            
-            for (let i = 0; i < words.length; i++) {{
-                if ((currentChunk + ' ' + words[i]).length <= maxLength) {{
-                    currentChunk += (currentChunk ? ' ' : '') + words[i];
-                }} else {{
-                    if (currentChunk) {{
-                        textChunks.push(currentChunk);
-                    }}
-                    currentChunk = words[i];
-                }}
-            }}
-            if (currentChunk) {{
-                textChunks.push(currentChunk);
-            }}
-            
-            showPlayingState();
-            errorDiv.style.display = 'none';
-            
-            // Play chunks sequentially
-            let chunkIndex = 0;
-            
-            function playNextChunk() {{
-                if (chunkIndex >= textChunks.length) {{
-                    resetUI();
-                    currentAudio = null;
-                    return;
-                }}
-                
-                const ttsUrl = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=' + langCode + '&client=tw-ob&q=' + encodeURIComponent(textChunks[chunkIndex]);
-                
-                currentAudio = new Audio(ttsUrl);
-                
-                currentAudio.onended = function() {{
-                    chunkIndex++;
-                    playNextChunk();
-                }};
-                
-                currentAudio.onerror = function(event) {{
-                    console.error('TTS Error:', event);
-                    if (chunkIndex === 0) {{
-                        errorDiv.textContent = 'Error loading audio. Please try again.';
-                        errorDiv.style.display = 'block';
-                    }}
-                    chunkIndex++;
-                    playNextChunk();
-                }};
-                
-                currentAudio.play().catch(function(error) {{
-                    console.error('Play error:', error);
-                    if (chunkIndex === 0) {{
-                        errorDiv.textContent = 'Error playing audio: ' + error.message;
-                        errorDiv.style.display = 'block';
-                    }}
-                    chunkIndex++;
-                    playNextChunk();
-                }});
-            }}
-            
-            playNextChunk();
-        }});
-        
-        // Stop button click handler
-        stopBtn.addEventListener('click', function() {{
-            if (currentAudio) {{
-                currentAudio.pause();
-                currentAudio.currentTime = 0;
-                currentAudio = null;
-            }}
-            resetUI();
-        }});
-        
-        // Stop audio if page is being unloaded
-        window.addEventListener('beforeunload', function() {{
-            if (currentAudio) {{
-                currentAudio.pause();
-                currentAudio = null;
-            }}
-        }});
-    }})();
-    </script>
-    """, height=50)
-"""
-# Language options
-                if (langVoices.length > 0) {{
-                    console.log('TTS: Found Indian language voices:', langVoices.map(v => v.name + ' (' + v.lang + ')'));
-                }}
-            }}
-            return voices;
-        }}
-        
-        // Populate voices on load and when they become available
-        getVoices();
-        if (synth.onvoiceschanged !== undefined) {{
-            synth.onvoiceschanged = function() {{
-                getVoices();
-            }};
-        }}
-        
-        // Also try loading voices after a short delay (some browsers need this)
-        setTimeout(function() {{
-            getVoices();
-        }}, 500);
-        
-        // Function to reset UI to initial state
-        function resetUI() {{
-            playBtn.style.display = 'block';
-            playBtn.textContent = '🔊 Play';
-            pauseBtn.style.display = 'none';
-            stopBtn.style.display = 'none';
-        }}
-        
-        // Function to show playing state
-        function showPlayingState() {{
-            playBtn.style.display = 'none';
-            pauseBtn.style.display = 'block';
-            stopBtn.style.display = 'block';
-        }}
-        
-        // Play button click handler
-        playBtn.addEventListener('click', function() {{
-            // If paused, resume
-            if (synth.paused && currentUtterance) {{
-                synth.resume();
-                showPlayingState();
-                return;
-            }}
-            
-            // Cancel any ongoing speech
-            synth.cancel();
-            
-            // Wait a moment to ensure voices are loaded
-            setTimeout(function() {{
-                // Get fresh voices list
-                const voices = getVoices();
-                const langPrefix = langCode.split('-')[0];
-                
-                // Create new utterance
-                currentUtterance = new SpeechSynthesisUtterance(textToRead);
-                
-                // CRITICAL: Set language FIRST before selecting voice
-                currentUtterance.lang = langCode;
-                currentUtterance.rate = 0.9;
-                currentUtterance.pitch = 1;
-                currentUtterance.volume = 1.0;
-                
-                // Aggressive voice selection for Tamil and other Indian languages
-                let matchingVoice = null;
-                
-                if (voices.length > 0) {{
-                    // Strategy 1: Exact match (e.g., 'ta-IN')
-                    matchingVoice = voices.find(v => v.lang === langCode);
-                    
-                    // Strategy 2: Language prefix with country (e.g., 'ta-IN-*')
-                    if (!matchingVoice) {{
-                        matchingVoice = voices.find(v => {
-                            const vLang = v.lang.toLowerCase();
-                            return vLang.startsWith(langPrefix.toLowerCase() + '-in') || 
-                                   vLang.startsWith(langPrefix.toLowerCase() + '-IN');
-                        });
-                    }}
-                    
-                    // Strategy 3: Any voice starting with language prefix
-                    if (!matchingVoice) {{
-                        matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(langPrefix.toLowerCase()));
-                    }}
-                    
-                    // Strategy 4: Case-insensitive search for language code anywhere
-                    if (!matchingVoice) {{
-                        matchingVoice = voices.find(v => v.lang.toLowerCase().includes(langPrefix.toLowerCase()));
-                    }}
-                    
-                    // Strategy 5: For Tamil specifically, try common Tamil voice names
-                    if (!matchingVoice && langPrefix === 'ta') {{
-                        matchingVoice = voices.find(v => {
-                            const name = v.name.toLowerCase();
-                            return name.includes('tamil') || name.includes('ta-');
-                        });
-                    }}
-                    
-                    if (matchingVoice) {{
-                        currentUtterance.voice = matchingVoice;
-                        // Use the voice's native language code (more reliable)
-                        currentUtterance.lang = matchingVoice.lang;
-                        console.log('TTS: Using voice:', matchingVoice.name, '(' + matchingVoice.lang + ')', 'for language', langCode);
-                        console.log('TTS: Text to read:', textToRead.substring(0, 100));
-                    }} else {{
-                        // If no matching voice, set language code anyway - browser may still try
-                        currentUtterance.lang = langCode;
-                        console.warn('TTS: No matching voice found for', langCode);
-                        console.log('TTS: Available voices:', voices.map(v => v.name + ' (' + v.lang + ')').slice(0, 20));
-                        errorDiv.textContent = 'Warning: Tamil voice not found. Tamil words may be skipped. Install Tamil language pack.';
-                        errorDiv.style.display = 'block';
-                        errorDiv.style.color = 'orange';
-                    }}
-                }} else {{
-                    // No voices loaded yet - set language anyway
-                    currentUtterance.lang = langCode;
-                    console.warn('TTS: No voices loaded yet, using language code:', langCode);
-                }}
-                
-                // Event handlers
-                currentUtterance.onend = function() {{
-                    resetUI();
-                    currentUtterance = null;
-                }};
-                
-                currentUtterance.onerror = function(event) {{
-                    console.error('TTS Error:', event.error);
-                    errorDiv.textContent = 'Speech error: ' + event.error;
-                    errorDiv.style.display = 'block';
-                    resetUI();
-                    currentUtterance = null;
-                }};
-                
-                currentUtterance.onpause = function() {{
-                    playBtn.style.display = 'block';
-                    playBtn.textContent = '▶️ Resume';
-                    pauseBtn.style.display = 'none';
-                }};
-                
-                currentUtterance.onresume = function() {{
-                    showPlayingState();
-                }};
-                
-                // Speak
-                synth.speak(currentUtterance);
-                showPlayingState();
-            }}, 100); // Small delay to ensure voices are loaded
-        }});
-        
-        // Pause button click handler
-        pauseBtn.addEventListener('click', function() {{
-            if (synth.speaking && !synth.paused) {{
-                synth.pause();
-            }}
-        }});
-        
-        // Stop button click handler
-        stopBtn.addEventListener('click', function() {{
-            synth.cancel();
-            resetUI();
-            currentUtterance = null;
-        }});
-        
-        // Stop speech if page is being unloaded
-        window.addEventListener('beforeunload', function() {{
-            synth.cancel();
-        }});
-    }})();
-    </script>
-    """, height=50)
-"""
 
 # Language options
 LANGUAGES = {
@@ -1158,16 +829,9 @@ if st.session_state.mode == "simple":
         st.markdown("---")
         st.header(t("Recommendations", "Recommendations"))
         
-        # Weather summary (like Next.js frontend) with TTS
+        # Weather summary (like Next.js frontend)
         if result.get('weather_summary'):
-            weather_text = result['weather_summary']
-            col1, col2 = st.columns([10, 1])
-            with col1:
-                st.info(f"{weather_text}")
-            with col2:
-                language = st.session_state.get('language', 'en')
-                lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                create_tts_button_simple(weather_text, lang_code)
+            st.info(f"{result['weather_summary']}")
         
         # Model version (like Next.js frontend)
         model_version = result.get('model_version', 'modular_v1.0')
@@ -1197,14 +861,7 @@ if st.session_state.mode == "simple":
             explanation_text = exp.get('text_translated') or exp.get('text', '')
             
             with st.expander(f"{crop_name}", expanded=(exp == explanations[0])):
-                # Add TTS button next to explanation
-                col1, col2 = st.columns([10, 1])
-                with col1:
-                    st.write(explanation_text)
-                with col2:
-                    language = st.session_state.get('language', 'en')
-                    lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                    create_tts_button_simple(explanation_text, lang_code)
+                st.write(explanation_text)
                 
                 # Attributions
                 attributions = exp.get('attributions', [])
@@ -1403,14 +1060,7 @@ else:
         st.header(t("Recommendations", "Recommendations"))
         
         if result.get('weather_summary'):
-            weather_text = result['weather_summary']
-            col1, col2 = st.columns([10, 1])
-            with col1:
-                st.info(f"{weather_text}")
-            with col2:
-                language = st.session_state.get('language', 'en')
-                lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                create_tts_button_simple(weather_text, lang_code)
+            st.info(f"{result['weather_summary']}")
         
         # Model version
         model_version = result.get('model_version', 'modular_v1.0')
@@ -1438,14 +1088,7 @@ else:
             explanation_text = exp.get('text_translated') or exp.get('text', '')
             
             with st.expander(f"{crop_name}", expanded=(exp == explanations[0])):
-                # Add TTS button next to explanation
-                col1, col2 = st.columns([10, 1])
-                with col1:
-                    st.write(explanation_text)
-                with col2:
-                    language = st.session_state.get('language', 'en')
-                    lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                    create_tts_button_simple(explanation_text, lang_code)
+                st.write(explanation_text)
                 
                 attributions = exp.get('attributions', [])
                 if attributions:
