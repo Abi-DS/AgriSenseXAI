@@ -119,8 +119,7 @@ class TranslationService:
                 'api_status': 'API Status',
                 'language': 'Language',
                 'mode': 'Mode',
-                'about': 'About',
-                'listen': 'Listen'
+                'about': 'About'
             },
             'hi': {
                 'welcome': 'अग्रीसेंस एक्सएआई में आपका स्वागत है',
@@ -170,8 +169,7 @@ class TranslationService:
                 'api_status': 'API स्थिति',
                 'language': 'भाषा',
                 'mode': 'मोड',
-                'about': 'के बारे में',
-                'listen': 'सुनें'
+                'about': 'के बारे में'
             },
             'ta': {
                 'welcome': 'அக்ரிசென்ஸ் எக்ஸ்ஏஐக்கு வரவேற்கிறோம்',
@@ -221,8 +219,7 @@ class TranslationService:
                 'api_status': 'API நிலை',
                 'language': 'மொழி',
                 'mode': 'முறை',
-                'about': 'பற்றி',
-                'listen': 'கேளுங்கள்'
+                'about': 'பற்றி'
             },
             'te': {
                 'welcome': 'అగ్రిసెన్స్ ఎక్స్ఏఐకు స్వాగతం',
@@ -272,8 +269,7 @@ class TranslationService:
                 'api_status': 'API స్థితి',
                 'language': 'భాష',
                 'mode': 'మోడ్',
-                'about': 'గురించి',
-                'listen': 'వినండి'
+                'about': 'గురించి'
             },
             'bn': {
                 'welcome': 'অগ্রিসেন্স এক্সএআইতে স্বাগতম',
@@ -323,8 +319,7 @@ class TranslationService:
                 'api_status': 'API অবস্থা',
                 'language': 'ভাষা',
                 'mode': 'মোড',
-                'about': 'সম্পর্কে',
-                'listen': 'শুনুন'
+                'about': 'সম্পর্কে'
             },
             'ml': {
                 'welcome': 'അഗ്രിസെൻസ് എക്സ്എഐയിലേക്ക് സ്വാഗതം',
@@ -375,8 +370,7 @@ class TranslationService:
                 'api_status': 'API സ്ഥിതി',
                 'language': 'ഭാഷ',
                 'mode': 'മോഡ്',
-                'about': 'കുറിച്ച്',
-                'listen': 'കേൾക്കുക'
+                'about': 'കുറിച്ച്'
             }
         }
     
@@ -1012,5 +1006,4 @@ class TranslationService:
             'bn': 'bn-IN-Standard-A'
         }
         return voice_mapping.get(language, 'en-US-Standard-A')
-
 
