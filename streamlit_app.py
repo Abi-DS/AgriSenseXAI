@@ -228,7 +228,7 @@ def create_tts_button_simple(text: str, lang_code: str):
     }})();
     </script>
     """, height=50)
-
+"""
 # Language options
                 if (langVoices.length > 0) {{
                     console.log('TTS: Found Indian language voices:', langVoices.map(v => v.name + ' (' + v.lang + ')'));
@@ -398,6 +398,7 @@ def create_tts_button_simple(text: str, lang_code: str):
     }})();
     </script>
     """, height=50)
+"""
 
 # Language options
 LANGUAGES = {
