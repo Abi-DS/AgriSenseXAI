@@ -73,116 +73,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize TTS script globally (only once) - use components.html
-if 'tts_script_loaded' not in st.session_state:
-    st.session_state.tts_script_loaded = True
-    components.html("""
-    <script>
-    (function() {
-        const speakFunc = function(text, lang) {
-            try {
-                console.log('TTS: Attempting to speak:', text.substring(0, 50));
-                const win = window.top || window;
-                
-                if (!('speechSynthesis' in win)) {
-                    alert('Text-to-speech not supported in your browser. Please use Chrome, Edge, or Safari.');
-                    return false;
-                }
-                
-                // Cancel any ongoing speech
-                win.speechSynthesis.cancel();
-                
-                // Wait a bit for cancel to complete
-                setTimeout(function() {
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    
-                    // Set language
-                    utterance.lang = lang === 'hi' ? 'hi-IN' : 
-                                    lang === 'ta' ? 'ta-IN' : 
-                                    lang === 'te' ? 'te-IN' : 
-                                    lang === 'bn' ? 'bn-IN' : 
-                                    lang === 'ml' ? 'ml-IN' : 'en-US';
-                    
-                    // Set voice properties
-                    utterance.rate = 0.9;
-                    utterance.pitch = 1;
-                    utterance.volume = 1.0;
-                    
-                    // Event handlers for debugging
-                    utterance.onstart = function() {
-                        console.log('TTS: Started speaking');
-                    };
-                    utterance.onend = function() {
-                        console.log('TTS: Finished speaking');
-                    };
-                    utterance.onerror = function(event) {
-                        console.error('TTS Error:', event.error);
-                        alert('Speech error: ' + event.error);
-                    };
-                    
-                    // Try to get voices and set appropriate voice
-                    const voices = win.speechSynthesis.getVoices();
-                    if (voices.length > 0) {
-                        // Try to find a voice matching the language
-                        let voice = voices.find(v => v.lang.startsWith(lang === 'hi' ? 'hi' : lang === 'ta' ? 'ta' : lang === 'te' ? 'te' : lang === 'bn' ? 'bn' : lang === 'ml' ? 'ml' : 'en'));
-                        if (voice) {
-                            utterance.voice = voice;
-                            console.log('TTS: Using voice:', voice.name);
-                        } else {
-                            console.log('TTS: Using default voice');
-                        }
-                    }
-                    
-                    // Speak
-                    win.speechSynthesis.speak(utterance);
-                    console.log('TTS: speak() called');
-                }, 100);
-                
-                return true;
-            } catch (e) {
-                console.error('TTS Exception:', e);
-                alert('Error: ' + e.message + '\\nPlease check browser console (F12) for details.');
-                return false;
-            }
-        };
-        
-        // Make available to both current window and parent (for iframes)
-        if (window.top) {
-            window.top.speakTextGlobal = speakFunc;
-        }
-        window.speakTextGlobal = speakFunc;
-        
-        // Load voices when available (some browsers load voices asynchronously)
-        const win = window.top || window;
-        if ('speechSynthesis' in win) {
-            let voicesLoaded = false;
-            const loadVoices = function() {
-                if (!voicesLoaded) {
-                    const voices = win.speechSynthesis.getVoices();
-                    console.log('TTS: Loaded', voices.length, 'voices');
-                    voicesLoaded = true;
-                }
-            };
-            loadVoices();
-            if (win.speechSynthesis.onvoiceschanged !== undefined) {
-                win.speechSynthesis.onvoiceschanged = loadVoices;
-            }
-        }
-    })();
-    </script>
-    """, height=0)
-
-# TTS helper function - create button that uses global script
-def create_tts_button(text: str, lang_code: str, button_id: str = None) -> str:
-    """Create HTML for TTS button with embedded script"""
-    if button_id is None:
-        button_id = f"tts_{hash(text) % 100000}"
-    text_json = json.dumps(text)
-    # Truncate very long text to avoid issues
-    display_text = text[:50] + "..." if len(text) > 50 else text
-    # Escape display_text for HTML attribute
-    display_text_escaped = display_text.replace('"', '&quot;').replace("'", "&#39;")
-    return f"""<div style="display: inline-block;"><button id="{button_id}" onclick="const win = window.top || window; if(win.speakTextGlobal) {{ win.speakTextGlobal({text_json}, '{lang_code}'); this.style.opacity='0.6'; setTimeout(() => this.style.opacity='1', 100); }} else {{ alert('TTS not loaded. Please refresh the page.'); }}" style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Click to hear: {display_text_escaped}" onmouseover="this.style.background='#0a6'" onmouseout="this.style.background='#0b7'"><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="vertical-align: middle;"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><span style="font-size: 12px; margin-left: 2px;">Play</span></button></div>"""
+# Simple TTS function - use HTML button with inline JavaScript (no iframes, no reruns)
+def create_tts_button_simple(text: str, lang_code: str):
+    """Create a simple TTS button using HTML + inline JavaScript"""
+    button_id = f"tts_{hash(text) % 100000}"
+    text_escaped = json.dumps(text)
+    lang_code_map = {
+        'hi': 'hi-IN', 'ta': 'ta-IN', 'te': 'te-IN', 
+        'bn': 'bn-IN', 'ml': 'ml-IN', 'en': 'en-US'
+    }
+    lang_final = lang_code_map.get(lang_code, 'en-US')
+    
+    # Simple HTML button with inline script - works directly in page
+    st.markdown(f"""
+    <div>
+        <button id="{button_id}" onclick="
+            if ('speechSynthesis' in window) {{
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance({text_escaped});
+                u.lang = '{lang_final}';
+                u.rate = 0.9;
+                u.pitch = 1;
+                u.volume = 1.0;
+                window.speechSynthesis.speak(u);
+            }} else {{
+                alert('Text-to-speech not supported');
+            }}
+        " style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px; width: 100%;">
+            🔊 Play
+        </button>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Language options
 LANGUAGES = {
@@ -951,8 +872,7 @@ if st.session_state.mode == "simple":
             with col2:
                 language = st.session_state.get('language', 'en')
                 lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                button_html = create_tts_button(weather_text, lang_code, f"tts_weather_{hash(weather_text) % 100000}")
-                st.markdown(button_html, unsafe_allow_html=True)
+                create_tts_button_simple(weather_text, lang_code)
         
         # Model version (like Next.js frontend)
         model_version = result.get('model_version', 'modular_v1.0')
@@ -989,8 +909,7 @@ if st.session_state.mode == "simple":
                 with col2:
                     language = st.session_state.get('language', 'en')
                     lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                    button_html = create_tts_button(explanation_text, lang_code, f"tts_exp_{hash(explanation_text) % 100000}")
-                    components.html(button_html, height=50)
+                    create_tts_button_simple(explanation_text, lang_code)
                 
                 # Attributions
                 attributions = exp.get('attributions', [])
@@ -1196,8 +1115,7 @@ else:
             with col2:
                 language = st.session_state.get('language', 'en')
                 lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                button_html = create_tts_button(weather_text, lang_code, f"tts_weather_manual_{hash(weather_text) % 100000}")
-                components.html(button_html, height=50)
+                create_tts_button_simple(weather_text, lang_code)
         
         # Model version
         model_version = result.get('model_version', 'modular_v1.0')
@@ -1232,8 +1150,7 @@ else:
                 with col2:
                     language = st.session_state.get('language', 'en')
                     lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
-                    button_html = create_tts_button(explanation_text, lang_code, f"tts_exp_manual_{hash(explanation_text) % 100000}")
-                    components.html(button_html, height=50)
+                    create_tts_button_simple(explanation_text, lang_code)
                 
                 attributions = exp.get('attributions', [])
                 if attributions:
