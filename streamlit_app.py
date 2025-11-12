@@ -73,98 +73,101 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize TTS script globally (only once)
+# Initialize TTS script globally (only once) - use components.html
 if 'tts_script_loaded' not in st.session_state:
     st.session_state.tts_script_loaded = True
-    st.markdown("""
+    components.html("""
     <script>
-    window.speakTextGlobal = function(text, lang) {
-        try {
-            console.log('TTS: Attempting to speak:', text.substring(0, 50));
-            if (!('speechSynthesis' in window)) {
-                alert('Text-to-speech not supported in your browser. Please use Chrome, Edge, or Safari.');
-                return false;
-            }
-            
-            // Cancel any ongoing speech
-            window.speechSynthesis.cancel();
-            
-            // Wait a bit for cancel to complete
-            setTimeout(function() {
-                const utterance = new SpeechSynthesisUtterance(text);
+    (function() {
+        const speakFunc = function(text, lang) {
+            try {
+                console.log('TTS: Attempting to speak:', text.substring(0, 50));
+                const win = window.top || window;
                 
-                // Set language
-                utterance.lang = lang === 'hi' ? 'hi-IN' : 
-                                lang === 'ta' ? 'ta-IN' : 
-                                lang === 'te' ? 'te-IN' : 
-                                lang === 'bn' ? 'bn-IN' : 
-                                lang === 'ml' ? 'ml-IN' : 'en-US';
-                
-                // Set voice properties
-                utterance.rate = 0.9;
-                utterance.pitch = 1;
-                utterance.volume = 1.0;
-                
-                // Event handlers for debugging
-                utterance.onstart = function() {
-                    console.log('TTS: Started speaking');
-                };
-                utterance.onend = function() {
-                    console.log('TTS: Finished speaking');
-                };
-                utterance.onerror = function(event) {
-                    console.error('TTS Error:', event.error);
-                    alert('Speech error: ' + event.error);
-                };
-                
-                // Try to get voices and set appropriate voice
-                const voices = window.speechSynthesis.getVoices();
-                if (voices.length > 0) {
-                    // Try to find a voice matching the language
-                    let voice = voices.find(v => v.lang.startsWith(lang === 'hi' ? 'hi' : lang === 'ta' ? 'ta' : lang === 'te' ? 'te' : lang === 'bn' ? 'bn' : lang === 'ml' ? 'ml' : 'en'));
-                    if (voice) {
-                        utterance.voice = voice;
-                        console.log('TTS: Using voice:', voice.name);
-                    } else {
-                        console.log('TTS: Using default voice');
-                    }
+                if (!('speechSynthesis' in win)) {
+                    alert('Text-to-speech not supported in your browser. Please use Chrome, Edge, or Safari.');
+                    return false;
                 }
                 
-                // Speak
-                window.speechSynthesis.speak(utterance);
-                console.log('TTS: speak() called');
-            }, 100);
-            
-            return true;
-        } catch (e) {
-            console.error('TTS Exception:', e);
-            alert('Error: ' + e.message + '\\nPlease check browser console (F12) for details.');
-            return false;
-        }
-    };
-    
-    // Make available to both current window and parent (for iframes)
-    if (window.top) {
-        window.top.speakTextGlobal = speakFunc;
-    }
-    window.speakTextGlobal = speakFunc;
-    
-    // Load voices when available (some browsers load voices asynchronously)
-    const win = window.top || window;
-    if ('speechSynthesis' in win) {
-        let voicesLoaded = false;
-        const loadVoices = function() {
-            if (!voicesLoaded) {
-                const voices = win.speechSynthesis.getVoices();
-                console.log('TTS: Loaded', voices.length, 'voices');
-                voicesLoaded = true;
+                // Cancel any ongoing speech
+                win.speechSynthesis.cancel();
+                
+                // Wait a bit for cancel to complete
+                setTimeout(function() {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    
+                    // Set language
+                    utterance.lang = lang === 'hi' ? 'hi-IN' : 
+                                    lang === 'ta' ? 'ta-IN' : 
+                                    lang === 'te' ? 'te-IN' : 
+                                    lang === 'bn' ? 'bn-IN' : 
+                                    lang === 'ml' ? 'ml-IN' : 'en-US';
+                    
+                    // Set voice properties
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1;
+                    utterance.volume = 1.0;
+                    
+                    // Event handlers for debugging
+                    utterance.onstart = function() {
+                        console.log('TTS: Started speaking');
+                    };
+                    utterance.onend = function() {
+                        console.log('TTS: Finished speaking');
+                    };
+                    utterance.onerror = function(event) {
+                        console.error('TTS Error:', event.error);
+                        alert('Speech error: ' + event.error);
+                    };
+                    
+                    // Try to get voices and set appropriate voice
+                    const voices = win.speechSynthesis.getVoices();
+                    if (voices.length > 0) {
+                        // Try to find a voice matching the language
+                        let voice = voices.find(v => v.lang.startsWith(lang === 'hi' ? 'hi' : lang === 'ta' ? 'ta' : lang === 'te' ? 'te' : lang === 'bn' ? 'bn' : lang === 'ml' ? 'ml' : 'en'));
+                        if (voice) {
+                            utterance.voice = voice;
+                            console.log('TTS: Using voice:', voice.name);
+                        } else {
+                            console.log('TTS: Using default voice');
+                        }
+                    }
+                    
+                    // Speak
+                    win.speechSynthesis.speak(utterance);
+                    console.log('TTS: speak() called');
+                }, 100);
+                
+                return true;
+            } catch (e) {
+                console.error('TTS Exception:', e);
+                alert('Error: ' + e.message + '\\nPlease check browser console (F12) for details.');
+                return false;
             }
         };
-        loadVoices();
-        if (win.speechSynthesis.onvoiceschanged !== undefined) {
-            win.speechSynthesis.onvoiceschanged = loadVoices;
+        
+        // Make available to both current window and parent (for iframes)
+        if (window.top) {
+            window.top.speakTextGlobal = speakFunc;
         }
-    }
+        window.speakTextGlobal = speakFunc;
+        
+        // Load voices when available (some browsers load voices asynchronously)
+        const win = window.top || window;
+        if ('speechSynthesis' in win) {
+            let voicesLoaded = false;
+            const loadVoices = function() {
+                if (!voicesLoaded) {
+                    const voices = win.speechSynthesis.getVoices();
+                    console.log('TTS: Loaded', voices.length, 'voices');
+                    voicesLoaded = true;
+                }
+            };
+            loadVoices();
+            if (win.speechSynthesis.onvoiceschanged !== undefined) {
+                win.speechSynthesis.onvoiceschanged = loadVoices;
+            }
+        }
     })();
     </script>
     """, height=0)
