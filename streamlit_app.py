@@ -133,6 +133,11 @@ def create_tts_button_simple(text: str, lang_code: str):
             if (voices.length > 0 && !voicesLoaded) {{
                 voicesLoaded = true;
                 console.log('TTS: Loaded', voices.length, 'voices');
+                // Log available languages for debugging
+                const langVoices = voices.filter(v => v.lang.includes('ta') || v.lang.includes('hi') || v.lang.includes('te') || v.lang.includes('bn') || v.lang.includes('ml'));
+                if (langVoices.length > 0) {{
+                    console.log('TTS: Found Indian language voices:', langVoices.map(v => v.name + ' (' + v.lang + ')'));
+                }}
             }}
             return voices;
         }}
@@ -144,6 +149,11 @@ def create_tts_button_simple(text: str, lang_code: str):
                 getVoices();
             }};
         }}
+        
+        // Also try loading voices after a short delay (some browsers need this)
+        setTimeout(function() {{
+            getVoices();
+        }}, 500);
         
         // Function to reset UI to initial state
         function resetUI() {{
@@ -183,13 +193,29 @@ def create_tts_button_simple(text: str, lang_code: str):
             const voices = getVoices();
             if (voices.length > 0) {{
                 const langPrefix = langCode.split('-')[0];
-                const matchingVoice = voices.find(v => v.lang.startsWith(langPrefix));
+                
+                // First try exact match (e.g., 'ta-IN')
+                let matchingVoice = voices.find(v => v.lang === langCode);
+                
+                // If no exact match, try language prefix match (e.g., 'ta')
+                if (!matchingVoice) {{
+                    matchingVoice = voices.find(v => v.lang.startsWith(langPrefix + '-'));
+                }}
+                
+                // If still no match, try any voice with language prefix
+                if (!matchingVoice) {{
+                    matchingVoice = voices.find(v => v.lang.toLowerCase().includes(langPrefix.toLowerCase()));
+                }}
+                
                 if (matchingVoice) {{
                     currentUtterance.voice = matchingVoice;
-                    console.log('TTS: Using voice:', matchingVoice.name, 'for language', langCode);
+                    console.log('TTS: Using voice:', matchingVoice.name, '(' + matchingVoice.lang + ')', 'for language', langCode);
                 }} else {{
-                    console.log('TTS: Using default voice for', langCode);
+                    console.log('TTS: No matching voice found for', langCode, '- using default voice');
+                    console.log('TTS: Available voices:', voices.map(v => v.name + ' (' + v.lang + ')').slice(0, 10));
                 }}
+            }} else {{
+                console.log('TTS: No voices available yet, will use default');
             }}
             
             // Event handlers
