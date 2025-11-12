@@ -73,10 +73,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Simple TTS function - use HTML button with inline JavaScript (no iframes, no reruns)
+# TTS component with proper controls (Play/Pause/Stop, voice selection)
 def create_tts_button_simple(text: str, lang_code: str):
-    """Create a simple TTS button using HTML + inline JavaScript"""
-    button_id = f"tts_{hash(text) % 100000}"
+    """Create a TTS button with Play/Pause/Stop controls and voice selection"""
+    component_id = f"tts_{hash(text) % 100000}"
     text_escaped = json.dumps(text)
     lang_code_map = {
         'hi': 'hi-IN', 'ta': 'ta-IN', 'te': 'te-IN', 
@@ -84,26 +84,164 @@ def create_tts_button_simple(text: str, lang_code: str):
     }
     lang_final = lang_code_map.get(lang_code, 'en-US')
     
-    # Simple HTML button with inline script - works directly in page
-    st.markdown(f"""
-    <div>
-        <button id="{button_id}" onclick="
-            if ('speechSynthesis' in window) {{
-                window.speechSynthesis.cancel();
-                const u = new SpeechSynthesisUtterance({text_escaped});
-                u.lang = '{lang_final}';
-                u.rate = 0.9;
-                u.pitch = 1;
-                u.volume = 1.0;
-                window.speechSynthesis.speak(u);
-            }} else {{
-                alert('Text-to-speech not supported');
-            }}
-        " style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px; width: 100%;">
-            🔊 Play
-        </button>
+    # Create TTS component with proper controls
+    components.html(f"""
+    <div id="tts-container-{component_id}" style="width: 100%;">
+        <div id="tts-error-{component_id}" style="color: red; display: none; font-size: 12px; margin-bottom: 4px;"></div>
+        <div style="display: flex; gap: 4px; align-items: center;">
+            <button id="tts-play-{component_id}" style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; flex: 1;">
+                🔊 Play
+            </button>
+            <button id="tts-pause-{component_id}" style="background: #f90; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; display: none;">
+                ⏸️ Pause
+            </button>
+            <button id="tts-stop-{component_id}" style="background: #c33; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; display: none;">
+                ⏹️ Stop
+            </button>
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+    
+    <script>
+    (function() {{
+        const containerId = '{component_id}';
+        const synth = window.speechSynthesis;
+        const textToRead = {text_escaped};
+        const langCode = '{lang_final}';
+        
+        // Get elements
+        const errorDiv = document.getElementById('tts-error-' + containerId);
+        const playBtn = document.getElementById('tts-play-' + containerId);
+        const pauseBtn = document.getElementById('tts-pause-' + containerId);
+        const stopBtn = document.getElementById('tts-stop-' + containerId);
+        
+        let currentUtterance = null;
+        let voicesLoaded = false;
+        
+        // Check if speechSynthesis is supported
+        if (!('speechSynthesis' in window)) {{
+            errorDiv.textContent = 'Text-to-speech not supported in your browser';
+            errorDiv.style.display = 'block';
+            playBtn.disabled = true;
+            playBtn.style.opacity = '0.5';
+            playBtn.style.cursor = 'not-allowed';
+            return;
+        }}
+        
+        // Function to populate and get voices (handles async loading)
+        function getVoices() {{
+            const voices = synth.getVoices();
+            if (voices.length > 0 && !voicesLoaded) {{
+                voicesLoaded = true;
+                console.log('TTS: Loaded', voices.length, 'voices');
+            }}
+            return voices;
+        }}
+        
+        // Populate voices on load and when they become available
+        getVoices();
+        if (synth.onvoiceschanged !== undefined) {{
+            synth.onvoiceschanged = function() {{
+                getVoices();
+            }};
+        }}
+        
+        // Function to reset UI to initial state
+        function resetUI() {{
+            playBtn.style.display = 'block';
+            playBtn.textContent = '🔊 Play';
+            pauseBtn.style.display = 'none';
+            stopBtn.style.display = 'none';
+        }}
+        
+        // Function to show playing state
+        function showPlayingState() {{
+            playBtn.style.display = 'none';
+            pauseBtn.style.display = 'block';
+            stopBtn.style.display = 'block';
+        }}
+        
+        // Play button click handler
+        playBtn.addEventListener('click', function() {{
+            // If paused, resume
+            if (synth.paused && currentUtterance) {{
+                synth.resume();
+                showPlayingState();
+                return;
+            }}
+            
+            // Cancel any ongoing speech
+            synth.cancel();
+            
+            // Create new utterance
+            currentUtterance = new SpeechSynthesisUtterance(textToRead);
+            currentUtterance.lang = langCode;
+            currentUtterance.rate = 0.9;
+            currentUtterance.pitch = 1;
+            currentUtterance.volume = 1.0;
+            
+            // Try to select appropriate voice for language (get fresh voices list)
+            const voices = getVoices();
+            if (voices.length > 0) {{
+                const langPrefix = langCode.split('-')[0];
+                const matchingVoice = voices.find(v => v.lang.startsWith(langPrefix));
+                if (matchingVoice) {{
+                    currentUtterance.voice = matchingVoice;
+                    console.log('TTS: Using voice:', matchingVoice.name, 'for language', langCode);
+                }} else {{
+                    console.log('TTS: Using default voice for', langCode);
+                }}
+            }}
+            
+            // Event handlers
+            currentUtterance.onend = function() {{
+                resetUI();
+                currentUtterance = null;
+            }};
+            
+            currentUtterance.onerror = function(event) {{
+                console.error('TTS Error:', event.error);
+                errorDiv.textContent = 'Speech error: ' + event.error;
+                errorDiv.style.display = 'block';
+                resetUI();
+                currentUtterance = null;
+            }};
+            
+            currentUtterance.onpause = function() {{
+                playBtn.style.display = 'block';
+                playBtn.textContent = '▶️ Resume';
+                pauseBtn.style.display = 'none';
+            }};
+            
+            currentUtterance.onresume = function() {{
+                showPlayingState();
+            }};
+            
+            // Speak
+            synth.speak(currentUtterance);
+            showPlayingState();
+        }});
+        
+        // Pause button click handler
+        pauseBtn.addEventListener('click', function() {{
+            if (synth.speaking && !synth.paused) {{
+                synth.pause();
+            }}
+        }});
+        
+        // Stop button click handler
+        stopBtn.addEventListener('click', function() {{
+            synth.cancel();
+            resetUI();
+            currentUtterance = null;
+        }});
+        
+        // Stop speech if page is being unloaded
+        window.addEventListener('beforeunload', function() {{
+            synth.cancel();
+        }});
+    }})();
+    </script>
+    """, height=50)
 
 # Language options
 LANGUAGES = {
