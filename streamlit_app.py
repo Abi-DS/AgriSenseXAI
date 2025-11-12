@@ -143,23 +143,31 @@ if 'tts_script_loaded' not in st.session_state:
         }
     };
     
+    // Make available to both current window and parent (for iframes)
+    if (window.top) {
+        window.top.speakTextGlobal = speakFunc;
+    }
+    window.speakTextGlobal = speakFunc;
+    
     // Load voices when available (some browsers load voices asynchronously)
-    if ('speechSynthesis' in window) {
+    const win = window.top || window;
+    if ('speechSynthesis' in win) {
         let voicesLoaded = false;
         const loadVoices = function() {
             if (!voicesLoaded) {
-                const voices = window.speechSynthesis.getVoices();
+                const voices = win.speechSynthesis.getVoices();
                 console.log('TTS: Loaded', voices.length, 'voices');
                 voicesLoaded = true;
             }
         };
         loadVoices();
-        if (window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = loadVoices;
+        if (win.speechSynthesis.onvoiceschanged !== undefined) {
+            win.speechSynthesis.onvoiceschanged = loadVoices;
         }
     }
+    })();
     </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
 # TTS helper function - create button that uses global script
 def create_tts_button(text: str, lang_code: str, button_id: str = None) -> str:
@@ -169,18 +177,9 @@ def create_tts_button(text: str, lang_code: str, button_id: str = None) -> str:
     text_json = json.dumps(text)
     # Truncate very long text to avoid issues
     display_text = text[:50] + "..." if len(text) > 50 else text
-    return f"""
-    <button id="{button_id}" onclick="if(window.speakTextGlobal) {{ window.speakTextGlobal({text_json}, '{lang_code}'); this.style.opacity='0.6'; setTimeout(() => this.style.opacity='1', 100); }} else {{ alert('TTS not loaded. Please refresh the page.'); }}" 
-            style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; gap: 4px;" 
-            title="Click to hear: {display_text}"
-            onmouseover="this.style.background='#0a6'"
-            onmouseout="this.style.background='#0b7'">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="vertical-align: middle;">
-            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-        </svg>
-        <span style="font-size: 12px; margin-left: 2px;">Play</span>
-    </button>
-    """
+    # Escape display_text for HTML attribute
+    display_text_escaped = display_text.replace('"', '&quot;').replace("'", "&#39;")
+    return f"""<div style="display: inline-block;"><button id="{button_id}" onclick="const win = window.top || window; if(win.speakTextGlobal) {{ win.speakTextGlobal({text_json}, '{lang_code}'); this.style.opacity='0.6'; setTimeout(() => this.style.opacity='1', 100); }} else {{ alert('TTS not loaded. Please refresh the page.'); }}" style="background: #0b7; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Click to hear: {display_text_escaped}" onmouseover="this.style.background='#0a6'" onmouseout="this.style.background='#0b7'"><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="vertical-align: middle;"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><span style="font-size: 12px; margin-left: 2px;">Play</span></button></div>"""
 
 # Language options
 LANGUAGES = {
@@ -988,7 +987,7 @@ if st.session_state.mode == "simple":
                     language = st.session_state.get('language', 'en')
                     lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
                     button_html = create_tts_button(explanation_text, lang_code, f"tts_exp_{hash(explanation_text) % 100000}")
-                    st.markdown(button_html, unsafe_allow_html=True)
+                    components.html(button_html, height=50)
                 
                 # Attributions
                 attributions = exp.get('attributions', [])
@@ -1195,7 +1194,7 @@ else:
                 language = st.session_state.get('language', 'en')
                 lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
                 button_html = create_tts_button(weather_text, lang_code, f"tts_weather_manual_{hash(weather_text) % 100000}")
-                st.markdown(button_html, unsafe_allow_html=True)
+                components.html(button_html, height=50)
         
         # Model version
         model_version = result.get('model_version', 'modular_v1.0')
@@ -1231,7 +1230,7 @@ else:
                     language = st.session_state.get('language', 'en')
                     lang_code = language if language in ['en', 'hi', 'ta', 'te', 'bn', 'ml'] else 'en'
                     button_html = create_tts_button(explanation_text, lang_code, f"tts_exp_manual_{hash(explanation_text) % 100000}")
-                    st.markdown(button_html, unsafe_allow_html=True)
+                    components.html(button_html, height=50)
                 
                 attributions = exp.get('attributions', [])
                 if attributions:
